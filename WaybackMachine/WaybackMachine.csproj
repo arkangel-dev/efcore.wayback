@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	  <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Title>EFCore.Wayback</Title>
+    <Authors>Arkangel</Authors>
+    <PackageProjectUrl>https://github.com/arkangel-dev/efcore.wayback</PackageProjectUrl>
+    <Copyright>Arkangel 2023</Copyright>
+    <RepositoryType>https://github.com/arkangel-dev/efcore.wayback</RepositoryType>
+    <Description>A library to revert changes made to entities by tapping to audit logs</Description>
+    <PackageTags>EFCore;Revert;Auditing</PackageTags>
+	<AssemblyVersion>1.8.*</AssemblyVersion>
+	<Deterministic>false</Deterministic>
+	<Version>1.8.9</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Castle.Core" Version="5.1.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Proxies" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Migrations\" />
+  </ItemGroup>
+
+</Project>
