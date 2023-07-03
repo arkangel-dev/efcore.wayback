@@ -25,7 +25,7 @@ internal class Program {
         // a fresh database context and the revert time
         // and get the old version of the entity
         var wayback = WayBack.CreateWayBack(new DatabaseContext(), revertPoint);
-        var oldsam = wayback.GetEntity<User>(s => s.Name == "Sam");
+        var oldsam = wayback.DbSetFirst<User>(s => s.Name == "Sam");
         Console.WriteLine($"Old Name : {oldsam.Name}");
 
         // Prints : Old Name : Sammy

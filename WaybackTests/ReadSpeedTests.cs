@@ -1,0 +1,112 @@
+﻿using CastleProxiesTest.DbEntities;
+using CastleProxiesTest;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Diagnostics;
+
+namespace WaybackTests {
+    [TestClass]
+    public class ReadSpeedTests {
+        private User sam;
+        private User yas;
+        private User jim;
+        private DatabaseContext context;
+
+        [TestInitialize]
+        public void Setup() {
+
+            context = new DatabaseContext();
+            context.Database.EnsureCreated();
+            context.Messages.ExecuteDelete();
+            context.Users.ExecuteDelete();
+            context.AuditEntries.ExecuteDelete();
+            context.Interests.ExecuteDelete();
+            context.SaveChanges();
+
+            // Create the users
+            sam = new User("Sammy");
+            yas = new User("Yas");
+            jim = new User("Jimmy");
+
+            // Add the users to the database
+            context.Users.AddRange(sam, yas, jim);
+            context.SaveChanges();
+        }
+
+        [TestMethod("Direct Nav Property : Null : 10000 cycles")]
+        public void TestReadSpeedNull() {
+            sam.BestFriend = null;
+            context.SaveChanges();
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+
+            var sw = new Stopwatch();
+            sw.Start();
+            for (int i = 0; i < 10000; i++) {
+                var x = oldsam.BestFriend;
+            }
+            sw.Stop();
+            Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
+        }
+
+        [TestMethod("Direct Nav Property : Not Null : 10000 cycles")]
+        public void TestReadSpeed() {
+            sam.BestFriend = yas;
+            context.SaveChanges();
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            var sw = new Stopwatch();
+            sw.Start();
+            for (int i = 0; i < 10000; i++) {
+                var x = oldsam.BestFriend;
+            }
+            sw.Stop();
+            Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
+        }
+
+
+        [TestMethod("One To Many Col Property : Null : 10000 cycles")]
+        public void OneToManyReadSpeedNull() {
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            var sw = new Stopwatch();
+            sw.Start();
+            for (int i = 0; i < 10000; i++) {
+                var x = oldsam.Interests;
+            }
+            sw.Stop();
+            Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
+        }
+
+        [TestMethod("One To Many Col Property : Not Null : 10000 cycles")]
+        public void OneToManyReadSpeedNotNull() {
+
+
+            var interests = new List<Interest>();
+            for (int i = 0; i < 1000; i++) {
+                var _int = new Interest() {
+                    InterestName = Guid.NewGuid().ToString()
+                };
+                context.Interests.Add(_int);
+            }
+            context.SaveChanges();
+            sam.Interests.AddRange(interests);
+            context.SaveChanges();
+
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            var sw = new Stopwatch();
+            sw.Start();
+            for (int i = 0; i < 10000; i++) {
+                var x = oldsam.Interests;
+            }
+            sw.Stop();
+            Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
+        }
+    }
+}

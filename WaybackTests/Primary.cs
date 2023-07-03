@@ -6,10 +6,10 @@ namespace WaybackTests {
     [TestClass]
     public class Primary {
 
-        private User? sam;
-        private User? yas;
-        private User? jim;
-        private DatabaseContext? context;
+        private User sam;
+        private User yas;
+        private User jim;
+        private DatabaseContext context;
 
         public Primary() {
             sam = null;
@@ -47,7 +47,7 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "John");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "John");
 
             Assert.AreEqual("Sammy", oldsam.Name);
         }
@@ -59,7 +59,7 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
-            var oldsam = wayback.GetEntity<User>(x => x.BestFriend == null);
+            var oldsam = wayback.DbSetFirst<User>(x => x.BestFriend == null);
 
             Assert.IsNull(oldsam.BestFriend);
         }
@@ -76,7 +76,7 @@ namespace WaybackTests {
             context.SaveChanges();
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             Assert.AreEqual(0, oldsam.Sent.Count());
         }
 
@@ -88,7 +88,7 @@ namespace WaybackTests {
             context.SaveChanges();
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             Assert.AreNotEqual(0, oldsam.Sent.Count());
             Assert.AreEqual(0, sam.Sent.Count());
         }
@@ -114,8 +114,8 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
-            var oldgaming = wayback.GetEntity<Interest>(x => x.InterestName == "Gaming");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            var oldgaming = wayback.DbSetFirst<Interest>(x => x.InterestName == "Gaming");
 
             Assert.AreEqual(0, oldgaming.Users.Count);
             Assert.AreEqual(0, oldsam.Interests.Count);
@@ -132,8 +132,8 @@ namespace WaybackTests {
             context.SaveChanges();
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
-            var oldgaming = wayback.GetEntity<Interest>(x => x.InterestName == "Gaming");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            var oldgaming = wayback.DbSetFirst<Interest>(x => x.InterestName == "Gaming");
 
             Assert.AreEqual(2, oldgaming.Users.Count);
             Assert.AreEqual(2, oldsam.Interests.Count);
@@ -156,7 +156,7 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
 
             Assert.AreEqual(2, oldsam.Interests.Count);
             Assert.AreEqual(3, sam.Interests.Count);
@@ -178,7 +178,7 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
 
             Assert.AreEqual(0, oldsam.Interests.Count);
             Assert.AreEqual(3, sam.Interests.Count);
@@ -216,7 +216,7 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             Assert.AreEqual("James", oldsam.BestFriend?.BestFriend?.Name);
             Assert.AreEqual("Sam", oldsam.BestFriend?.BestFriend?.BestFriend?.Name);
 
@@ -260,8 +260,8 @@ namespace WaybackTests {
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
-            var oldsam = wayback.GetEntity<User>(x => x.Name == "Sammy");
-            var oldCodingIntestest = wayback.GetEntity<Interest>(x => x.InterestName == "Software Development");
+            var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            var oldCodingIntestest = wayback.DbSetFirst<Interest>(x => x.InterestName == "Software Development");
 
             Assert.AreEqual("James", oldsam.BestFriend?.BestFriend?.Name);
             Assert.AreEqual("Sam", oldsam.BestFriend?.BestFriend?.BestFriend?.Name);
