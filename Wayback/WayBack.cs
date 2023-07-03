@@ -1,34 +1,23 @@
-﻿using Castle.Components.DictionaryAdapter.Xml;
-using Castle.DynamicProxy;
-using CastleProxiesTest.DbEntities;
-using CastleProxiesTest.Migrations;
+﻿using Castle.DynamicProxy;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Metadata.Conventions;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using System.Linq.Expressions;
-using System.Reflection;
-using System.Reflection.Metadata.Ecma335;
-using System.Text;
-using System.Threading.Tasks;
+using WaybackMachine;
+using WaybackMachine.Entities;
 
 namespace CastleProxiesTest {
     public class WayBack {
 
-        internal DatabaseContext _dbcontext;
+        internal IWaybackContext _dbcontext;
         internal ProxyGenerator _generator;
         internal DateTime _revertPoint;
-        private WayBack(DatabaseContext dbcontext, DateTime revertPoint) {
+        private WayBack(IWaybackContext dbcontext, DateTime revertPoint) {
             _dbcontext = dbcontext;
             _revertPoint = revertPoint;
             _generator = new ProxyGenerator();
         }
 
-        public static WayBack CreateWayBack(DatabaseContext dbcontext, DateTime revertPoint) {
+        public static WayBack CreateWayBack(IWaybackContext dbcontext, DateTime revertPoint) {
             return new WayBack(dbcontext, revertPoint);
         }
 
@@ -105,13 +94,13 @@ namespace CastleProxiesTest {
         /// <param name="id">Primary key to target</param>
         /// <returns>Proxy entity to use</returns>        
         public object GenerateEntity(string tablename, int id) {
-            object? _returnVal = _dbcontext.FindEntity(tablename, id);
+            object? _returnVal = _dbcontext.InternalDbContext.FindEntity(tablename, id);
 
             object? cacheCheck = null;
             if (_entityCacheProxies.TryGetValue(_returnVal, out cacheCheck))
                 return cacheCheck;
 
-            var _type = _dbcontext.GetTypeFromTableName(tablename);
+            var _type = _dbcontext.InternalDbContext.GetTypeFromTableName(tablename);
 
             _returnVal = GenerateEntity(_returnVal, _type);
             return _returnVal;
@@ -124,7 +113,7 @@ namespace CastleProxiesTest {
         /// <param name="id">Primary key of the target table name to target</param>
         /// <returns>Proxy entity to use</returns>
         public object? GenerateEntity(Type type, int id) {
-            object? _returnVal = _dbcontext.FindEntity(_dbcontext.GetTableNameFromType(type)
+            object? _returnVal = _dbcontext.InternalDbContext.FindEntity(_dbcontext.InternalDbContext.GetTableNameFromType(type)
                 ?? throw new Exception($"Failed to get the tablename for {type.FullName}"), id);
 
             object? cacheCheck = null;
@@ -168,16 +157,16 @@ namespace CastleProxiesTest {
                 ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
             // Get the table name of the entity
-            var tableName = _dbcontext.GetTableNameFromType(targetBaseType);
+            var tableName = _dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
 
             // Get the change history for the entity
             var auditLogs = _dbcontext.AuditEntries
                 .Where(s =>
                     s.EntityID == entityID &&
                     s.TableName == tableName &&
-                    s.ChangeDate >= _revertPoint &&
+                    s.ParentTransaction.ChangeDate >= _revertPoint &&
                     s.ChangeType == AuditEntryType.PropertyOrReferenceChange)
-                .OrderByDescending(s => s.ChangeDate);
+                .OrderByDescending(s => s.ParentTransaction.ChangeDate);
 
             // Copy the values from the reference EFCore
             // entity over to the target wayback entity
@@ -262,14 +251,14 @@ namespace CastleProxiesTest {
                 if (_wayback.SupportsType(returnType)) {
 
                     // Get the entity type and the navigation property
-                    var entityType = _wayback._dbcontext.Model.FindEntityType(returnType) 
+                    var entityType = _wayback._dbcontext.InternalDbContext.Model.FindEntityType(returnType) 
                         ?? throw new Exception($"Cannot get entity type of {returnType}");
                     var nav_property = returnType.GetProperty(String.Join(String.Empty, invocation.Method.Name.Skip(4))) 
                         ?? throw new Exception($"Failed to get property for {String.Join(String.Empty, invocation.Method.Name.Skip(4))}");
 
                     // Get the tablename, column name and the invoation result based on the
                     // EFCore entity
-                    var table_name = entityType.GetTableName() ?? string.Empty;
+                    var table_name = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType) ?? string.Empty;
                     var columnName = entityType.FindNavigation(nav_property.Name)?.ForeignKey.Properties.First().Name;
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);
 
@@ -280,8 +269,8 @@ namespace CastleProxiesTest {
                             s.TableName == table_name &&
                             s.PropertyName == columnName
                         )
-                        .OrderByDescending(s => s.ChangeDate)
-                        .FirstOrDefault(s => s.ChangeDate <= _wayback._revertPoint);
+                        .OrderByDescending(s => s.ParentTransaction.ChangeDate)
+                        .FirstOrDefault(s => s.ParentTransaction.ChangeDate <= _wayback._revertPoint);
 
                     // If there is not no audit record,
                     // then assume there has been no changes to object
@@ -311,7 +300,7 @@ namespace CastleProxiesTest {
                     // proxied EFCore entity that was fetched based on the 
                     // tablename and the new value audit change
                     invocation.ReturnValue =
-                        _wayback.GenerateEntity(_wayback._dbcontext.FindEntity(table_name, Int32.Parse(revertpoint_old_key.NewValue)), returnType);
+                        _wayback.GenerateEntity(_wayback._dbcontext.InternalDbContext.FindEntity(table_name, Int32.Parse(revertpoint_old_key.NewValue)), returnType);
                     ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
                     return;
                 }
@@ -323,14 +312,14 @@ namespace CastleProxiesTest {
 
                     var genericType = returnType.GenericTypeArguments.First();
                     var entityType = _target.GetType().BaseType;
-                    var efCoreEntityType = _wayback._dbcontext.Model.FindEntityType(entityType)
+                    var efCoreEntityType = _wayback._dbcontext.InternalDbContext.Model.FindEntityType(entityType)
                         ?? throw new Exception($"Cannot get entity type of {entityType}");
 
                     var nav_property = entityType.GetProperty(String.Join(String.Empty, invocation.Method.Name.Skip(4)))
                         ?? throw new Exception($"Failed to get property for {String.Join(String.Empty, invocation.Method.Name.Skip(4))}");
 
                     var columnName = nav_property.Name;
-                    var table_name = efCoreEntityType.GetTableName() ?? string.Empty;
+                    var table_name = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType) ?? string.Empty;
 
                     // Check if the generic type is supported by the
                     // wayback machine
@@ -372,9 +361,9 @@ namespace CastleProxiesTest {
                                     s.EntityID == entity_id &&
                                     s.TableName == table_name &&
                                     s.PropertyName == columnName &&
-                                    s.ChangeDate >= _wayback._revertPoint
+                                    s.ParentTransaction.ChangeDate >= _wayback._revertPoint
                                 )
-                                .OrderByDescending(s => s.ChangeDate)
+                                .OrderByDescending(s => s.ParentTransaction.ChangeDate)
                                 .ToList();
 
                             foreach (var auditEntry in revertAuditLogs) {

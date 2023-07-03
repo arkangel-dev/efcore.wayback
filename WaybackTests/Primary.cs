@@ -1,6 +1,7 @@
 using CastleProxiesTest;
 using CastleProxiesTest.DbEntities;
 using Microsoft.EntityFrameworkCore;
+using WaybackMachine;
 
 namespace WaybackTests {
     [TestClass]
@@ -12,19 +13,22 @@ namespace WaybackTests {
         private DatabaseContext context;
 
         public Primary() {
-            sam = null;
-            yas = null;
-            jim = null;
+           
         }
 
         [TestInitialize]
         public void Setup() {
+            sam = null;
+            yas = null;
+            jim = null;
+
 
             context = new DatabaseContext();
             context.Database.EnsureCreated();
             context.Messages.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
+            context.AuditTransactions.ExecuteDelete();
             context.Interests.ExecuteDelete();
             context.SaveChanges();
 
@@ -36,6 +40,7 @@ namespace WaybackTests {
             // Add the users to the database
             context.Users.AddRange(sam, yas, jim);
             context.SaveChanges();
+
         }
 
 
@@ -43,7 +48,7 @@ namespace WaybackTests {
         [TestMethod]
         public void PropertyRevseral() {
             sam.Name = "John";
-            context.SaveChanges();
+            context.SaveChangesWithTracking();
 
 
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
@@ -228,7 +233,6 @@ namespace WaybackTests {
             Assert.AreEqual("James", oldsam.BestFriend?.BestFriend?.Name);
             Assert.AreEqual("Sam", oldsam.BestFriend?.BestFriend?.BestFriend?.Name);
 
-
         }
 
         [TestMethod("Combined Set 2")]
@@ -243,9 +247,6 @@ namespace WaybackTests {
             sam.BestFriend = yas;
             yas.BestFriend = jim;
             jim.BestFriend = sam;
-
-            jim.Name = "Jamothy";
-            context.SaveChanges();
 
             jim.Name = "James";
             sam.Name = "Sam";

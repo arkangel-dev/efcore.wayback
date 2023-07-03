@@ -25,6 +25,7 @@ namespace WaybackTests {
             context.Messages.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
+            context.AuditTransactions.ExecuteDelete();
             context.Interests.ExecuteDelete();
             context.SaveChanges();
 
