@@ -82,7 +82,15 @@ namespace WaybackTests {
 
         [TestMethod("One to Many Reversal (Existing Entries)")]
         public void OneToManyReversal_ExistingEntries() {
-            OneToManyReversal_NewEntries();
+
+            for (int i = 0; i < 10; i++) {
+                sam.Sent.Add(new Message() {
+                    Recipient = yas,
+                    Contents = $"Hello World : {i}"
+                });
+            }
+            context.SaveChanges();
+
             var PreReversalTime = DateTime.Now;
             sam.Sent.Clear();
             context.SaveChanges();
