@@ -34,6 +34,7 @@ namespace WaybackMachine.Entities {
     public enum AuditEntryType {
         PropertyOrReferenceChange,
         CollectionAdd,
-        CollectionRemove
+        CollectionRemove,
+        Created
     }
 }

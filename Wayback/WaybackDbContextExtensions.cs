@@ -15,7 +15,13 @@ using WaybackMachine.Entities;
 using WaybackMachine.FilterAttributes;
 
 namespace WaybackMachine {
+    public static class SoftDeleteHelper<T> {
+        public static LambdaExpression ExcludeSoftDeleted() => 
+            (T o) => !EF.Property<bool>(o, "IsDeleted");
+    }
     public static class WaybackDbContextExtensions {
+
+
         public static void ConfigureWaybackModel(this IWaybackContext context, ModelBuilder modelBuilder) {
             modelBuilder.Entity<AuditTransactionRecord>()
                 .HasMany(s => s.Changes)
@@ -30,31 +36,55 @@ namespace WaybackMachine {
                 .Where(s => s.GetCustomAttribute(typeof(SoftDelete)) != null)
                 .ToList();
 
+            //foreach (var type in types) {
 
-            foreach (var type in types) {
 
-                if (type.GetProperty("IsDeleted") == null)
-                    throw new Exception($"Type of `{type.FullName}` does not have the required `IsDeleted` property. This is need for SoftDelete capabilities");
+            //    LambdaExpression lambda = (LambdaExpression)
+            //        (typeof(SoftDeleteHelper<>).MakeGenericType(type).GetMethod("ExcludeSoftDeleted") ?? throw new Exception()).Invoke(null, null);
 
-                ParameterExpression param = Expression.Parameter(type, "s");
-                MemberExpression memberExpression = Expression.PropertyOrField(param, "IsDeleted");
-                var returnExpression = Expression.Lambda(Expression.Equal(memberExpression, Expression.Constant(true)));
-                modelBuilder.Entity(type)
-                    .Property(typeof(bool), "IsDeleted")
-                    .IsRequired(true);
-            }
+
+            //    modelBuilder.Entity(type)
+            //        .HasQueryFilter(lambda)
+            //        .Property(typeof(bool), "IsDeleted")
+            //        .IsRequired(true);
+            //}
             //modelBuilder.Entity()
         }
-        internal static string? GetTableNameFromType(this DbContext dbcontext, Type t) =>
-            dbcontext.Model.GetEntityTypes()
+
+
+        private static Dictionary<Type, string?> TypeToTableCache = new Dictionary<Type, string>();
+        private static Dictionary<string, Type?> TableToTypeCache = new Dictionary<string, Type>();
+
+        internal static string? GetTableNameFromType(this DbContext dbcontext, Type t) {
+            string? result = null;
+
+            if (TypeToTableCache.TryGetValue(t, out result))
+                return result;
+
+
+            result = dbcontext.Model.GetEntityTypes()
                 .FirstOrDefault(s => s.ClrType == t)?
                 .GetAnnotation("Relational:TableName")
                 .Value?.ToString();
 
-        internal static Type? GetTypeFromTableName(this DbContext dbcontext, string t) =>
-            dbcontext.Model.GetEntityTypes()
+            TypeToTableCache.Add(t, result);
+            return result;
+        }
+
+        internal static Type? GetTypeFromTableName(this DbContext dbcontext, string t) {
+            Type? result = null;
+
+            if (TableToTypeCache.TryGetValue(t, out result))
+                return result;
+
+
+            result = dbcontext.Model.GetEntityTypes()
             .FirstOrDefault(s => s.GetAnnotation("Relational:TableName").Value?.ToString() == t)
             ?.ClrType;
+
+            TableToTypeCache.Add(t, result);
+            return result;
+        }
 
         internal static int GetKey<T>(this DbContext dbcontext, T entity) {
             var keyName = dbcontext.Model.FindEntityType(typeof(T)).FindPrimaryKey().Properties
@@ -119,28 +149,18 @@ namespace WaybackMachine {
                     AddedEntities.Add(entry);
                     continue;
                 }
-
                 if (entry.State != EntityState.Modified) continue;
 
-                var ChangeCount = 0;
+                var IDProperty = entry.Entity.GetType()
+                       .GetProperties()
+                       .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
+
                 foreach (var property in entry.Properties) {
                     if (property == null) continue;
                     if (!property.IsModified) continue;
                     var propertyName = property.Metadata.Name;
-                    if (property.Metadata.IsForeignKey()) {
-                        propertyName = propertyName.Substring(0, propertyName.Length - 2);
-                    }
 
                     var CurrentValue = property.CurrentValue;
-                    if (!property.Metadata.IsShadowProperty()) {
-                        var propInfo = entryType.GetProperty(propertyName);
-                    }
-
-                    var IDProperty = entry.Entity.GetType()
-                        .GetProperties()
-                        .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
-
-                    ChangeCount++;
                     TransactionRecord.Changes.Add(new AuditRecord() {
                         PropertyName = property.Metadata.Name,
                         EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
@@ -171,8 +191,6 @@ namespace WaybackMachine {
                     var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
                     var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
-
-
                     TransactionRecord.Changes.Add(new AuditRecord() {
                         PropertyName = "",
                         EntityID = entry.Entity.GetPrimaryKeyValue(),
@@ -185,38 +203,19 @@ namespace WaybackMachine {
                         J2Table = table_b,
                         ChangeType = AuditEntryType.CollectionAdd
                     });
-
                     continue;
                 }
 
-                var ChangeCount = 0;
-                foreach (var property in entry.Properties) {
-                    if (property == null) continue;
-                    if (!property.Metadata.IsForeignKey()) continue;
-                    var propertyName = property.Metadata.Name;
+                var IDProperty = entry.Entity.GetType()
+                    .GetProperties()
+                    .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
 
-                    var CurrentValue = property.CurrentValue;
-                    if (!property.Metadata.IsShadowProperty()) {
-                        var propInfo = entryType.GetProperty(propertyName);
-                    }
-
-                    var IDProperty = entry.Entity.GetType()
-                        .GetProperties()
-                        .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
-
-                    ChangeCount++;
-                    TransactionRecord.Changes.Add(new AuditRecord() {
-                        PropertyName = property.Metadata.Name,
-                        EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
-                        TableName = context.InternalDbContext.GetTableNameFromType(entryType) ?? "unknown",
-                        NewValue = property.CurrentValue?.ToString(),
-                        ChangeType = AuditEntryType.CollectionAdd
-                    });
-                }
-
-
-
-
+                TransactionRecord.Changes.Add(new AuditRecord() {
+                    PropertyName = "",
+                    EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
+                    TableName = context.InternalDbContext.GetTableNameFromType(entryType) ?? "unknown",
+                    ChangeType = AuditEntryType.Created
+                });
             }
             context.AuditTransactions.Add(TransactionRecord);
             return context.BaseSaveChanges();

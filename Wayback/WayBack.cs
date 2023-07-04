@@ -378,6 +378,12 @@ namespace CastleProxiesTest {
                                 // and create proxies and add them to the list
                                 foreach (object obj in invocationResult) {
                                     if (targetAuditEntries.Any(s => s.OldValue == null && s.EntityID == obj.GetPrimaryKeyValue())) continue;
+                                    if (_wayback._dbcontext.AuditEntries.Any(s => 
+                                        s.TableName == targetTableName &&
+                                        s.EntityID == obj.GetPrimaryKeyValue() &&
+                                        s.ChangeType == AuditEntryType.Created &&
+                                        s.ParentTransaction.ChangeDate >= _wayback._revertPoint
+                                    )) continue;
                                     returnList.Add(_wayback.GenerateEntity(obj, genericType));
                                 }
 

@@ -23,6 +23,7 @@ namespace WaybackTests {
             context = new DatabaseContext();
             context.Database.EnsureCreated();
             context.Messages.ExecuteDelete();
+            context.Junction_Interests_Users.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
             context.AuditTransactions.ExecuteDelete();
@@ -110,9 +111,10 @@ namespace WaybackTests {
             Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
         }
 
-        [TestMethod("Base Line Save Operation (200 Records)")]
+        
+        [TestMethod("Base Line Save Operation (2000 Records)")]
         public void BaseLineTest() {
-            for (int i = 0; i < 200; i++) {
+            for (int i = 0; i < 2000; i++) {
                 sam.Sent.Add(new Message() {
                     Recipient = yas,
                     Contents = $"Hello World : {i}"

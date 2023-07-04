@@ -27,6 +27,7 @@ namespace WaybackTests {
             context = new DatabaseContext();
             context.Database.EnsureCreated();
             context.Messages.ExecuteDelete();
+            context.Junction_Interests_Users.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
             context.AuditTransactions.ExecuteDelete();
@@ -115,10 +116,10 @@ namespace WaybackTests {
         [TestMethod("One to Many Reversal (Existing Entries)")]
         public void OneToManyReversal_ExistingEntries() {
 
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < 2000; i++) {
                 sam.Sent.Add(new Message() {
-                    Recipient = yas,
-                    Contents = $"Hello World : {i}"
+                    //Recipient = yas,
+                    Contents = $"Msg : {i}"
                 });
             }
             var write_sw = new Stopwatch();
@@ -137,10 +138,11 @@ namespace WaybackTests {
 
 
 
-            var read_sw = new Stopwatch();
-            read_sw.Start();
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+
+            var read_sw = new Stopwatch();
+            read_sw.Start();
             Assert.AreNotEqual(0, oldsam.Sent.Count());
             Assert.AreEqual(0, sam.Sent.Count());
             read_sw.Stop();
