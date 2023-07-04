@@ -17,4 +17,7 @@ namespace WaybackMachine.FilterAttributes {
 
     [AttributeUsage(AttributeTargets.Class, Inherited = true)]
     public class Audit : Attribute { }
+
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public class SoftDelete : Attribute { }
 }

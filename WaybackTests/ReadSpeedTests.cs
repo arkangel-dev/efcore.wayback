@@ -71,8 +71,8 @@ namespace WaybackTests {
         }
 
 
-        [TestMethod("One To Many Col Property : Null : 10000 cycles")]
-        public void OneToManyReadSpeedNull() {
+        [TestMethod("Many To Many Col Property : Null : 10000 cycles")]
+        public void ManyToManyReadSpeedNull() {
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             var sw = new Stopwatch();
@@ -84,8 +84,8 @@ namespace WaybackTests {
             Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
         }
 
-        [TestMethod("One To Many Col Property : Not Null : 10000 cycles")]
-        public void OneToManyReadSpeedNotNull() {
+        [TestMethod("Many To Many Col Property : Not Null : 10000 cycles")]
+        public void ManyToManyReadSpeedNotNull() {
 
 
             var interests = new List<Interest>();
@@ -108,6 +108,22 @@ namespace WaybackTests {
             }
             sw.Stop();
             Console.WriteLine($"Read Cycle Completed in {sw.ElapsedMilliseconds}ms");
+        }
+
+        [TestMethod("Base Line Save Operation (200 Records)")]
+        public void BaseLineTest() {
+            for (int i = 0; i < 200; i++) {
+                sam.Sent.Add(new Message() {
+                    Recipient = yas,
+                    Contents = $"Hello World : {i}"
+                });
+            }
+            var write_sw = new Stopwatch();
+            write_sw.Start();
+            context.BaseSaveChanges();
+            write_sw.Stop();
+
+            Console.WriteLine($"Write Operation Completed in {write_sw.ElapsedMilliseconds}ms");
         }
     }
 }

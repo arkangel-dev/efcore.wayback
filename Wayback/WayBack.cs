@@ -1,9 +1,14 @@
 ﻿using Castle.DynamicProxy;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using Microsoft.VisualBasic;
 using System.Collections;
 using System.Linq.Expressions;
+using System.Reflection;
 using WaybackMachine;
 using WaybackMachine.Entities;
+using WaybackMachine.FilterAttributes;
 
 namespace CastleProxiesTest {
     public class WayBack {
@@ -238,6 +243,8 @@ namespace CastleProxiesTest {
                 }
 
                 // Save the return type and the entity ID
+
+                var propertyName = String.Join(String.Empty, invocation.Method.Name.Skip(4));
                 var returnType = invocation.Method.ReturnParameter.ParameterType;
                 var entity_id = (int)(_target.GetType()
                           .GetProperties()
@@ -245,64 +252,68 @@ namespace CastleProxiesTest {
                           .GetValue(_target) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
 
+                var entityType = _target.GetType().BaseType
+                    ?? throw new Exception($"Cannot get the base type for `{_target.GetType().FullName}`");
+
+                var efCoreEntityType = _wayback._dbcontext.InternalDbContext.Model.FindEntityType(entityType)
+                    ?? throw new Exception($"Cannot get entity type of `{entityType.FullName}`");
+
+
+
+
+                IProperty targetForeignKey = null;
+                var IsJunction = false;
+
+
+                var efNavProperty = efCoreEntityType.FindNavigation(propertyName);
+
+                if (efNavProperty != null) { 
+                    targetForeignKey = efNavProperty.ForeignKey.Properties.First();
+                } else {
+                    IsJunction = true;
+                    var efNavSkipProperty = efCoreEntityType.FindSkipNavigation(propertyName)
+                        ?? throw new Exception($"Cannot get the EFNavProperty (Skip) {propertyName} in type `{efCoreEntityType.Name}");
+                    targetForeignKey = efNavSkipProperty.ForeignKey.Properties.First();
+                }
+
                 // The return type is directly supported by the wayback 
                 // machine. This means its a direct type, as in the property is a
                 // single navigational property
                 if (_wayback.SupportsType(returnType)) {
 
-                    // Get the entity type and the navigation property
-                    var entityType = _wayback._dbcontext.InternalDbContext.Model.FindEntityType(returnType) 
-                        ?? throw new Exception($"Cannot get entity type of {returnType}");
-                    var nav_property = returnType.GetProperty(String.Join(String.Empty, invocation.Method.Name.Skip(4))) 
-                        ?? throw new Exception($"Failed to get property for {String.Join(String.Empty, invocation.Method.Name.Skip(4))}");
+                    var sourceTableName = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
+                                ?? throw new Exception($"Failed to get the table name for type `{entityType.FullName}`");
 
-                    // Get the tablename, column name and the invoation result based on the
-                    // EFCore entity
-                    var table_name = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType) ?? string.Empty;
-                    var columnName = entityType.FindNavigation(nav_property.Name)?.ForeignKey.Properties.First().Name;
+                    var targetTableName = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType)
+                                ?? throw new Exception($"Failed to get the table name for type `{returnType.FullName}`");
+
+
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);
 
-                    // Get the ID from the last change update
-                    var revertpoint_old_key = _wayback._dbcontext.AuditEntries
+                    var latestUpdate = _wayback._dbcontext.AuditEntries
                         .Where(s =>
+                            s.PropertyName == targetForeignKey.Name &&
+                            s.TableName == sourceTableName &&
                             s.EntityID == entity_id &&
-                            s.TableName == table_name &&
-                            s.PropertyName == columnName
+                            s.ParentTransaction.ChangeDate >= _wayback._revertPoint
                         )
                         .OrderByDescending(s => s.ParentTransaction.ChangeDate)
-                        .FirstOrDefault(s => s.ParentTransaction.ChangeDate <= _wayback._revertPoint);
+                        .FirstOrDefault();
 
-                    // If there is not no audit record,
-                    // then assume there has been no changes to object
-                    // and just return the invocation result
-                    // But before that, be sure to return a proxy if the invocation
-                    // result is not null
-                    if (revertpoint_old_key == null) {
-                        if (invocation_result == null) {
-                            invocation.ReturnValue = null;
-                            ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
-                            return;
-                        }
-                        invocation.ReturnValue = _wayback.GenerateEntity(invocation_result, returnType);
+                    if (latestUpdate == null || latestUpdate?.OldValue == null) {
+                        invocation.ReturnValue = invocation_result;
                         ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
                         return;
                     }
 
-                    // If the auditlogs new value is null, set that as
-                    // the invocation result
-                    if (revertpoint_old_key.NewValue == null) {
-                        invocation.ReturnValue = null;
-                        ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
-                        return;
-                    }
 
-                    // Else just set the return value of the invocation to the
-                    // proxied EFCore entity that was fetched based on the 
-                    // tablename and the new value audit change
-                    invocation.ReturnValue =
-                        _wayback.GenerateEntity(_wayback._dbcontext.InternalDbContext.FindEntity(table_name, Int32.Parse(revertpoint_old_key.NewValue)), returnType);
+                    var newResult = _wayback.GenerateEntity(targetTableName, Int32.Parse(latestUpdate.OldValue));
+                    invocation.ReturnValue = newResult;
                     ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
                     return;
+
+
+
                 }
 
                 // Check if the methods return type has generic
@@ -310,73 +321,121 @@ namespace CastleProxiesTest {
                 // collection
                 if (returnType.GenericTypeArguments.Any()) {
 
+
+
+
                     var genericType = returnType.GenericTypeArguments.First();
-                    var entityType = _target.GetType().BaseType;
-                    var efCoreEntityType = _wayback._dbcontext.InternalDbContext.Model.FindEntityType(entityType)
-                        ?? throw new Exception($"Cannot get entity type of {entityType}");
-
-                    var nav_property = entityType.GetProperty(String.Join(String.Empty, invocation.Method.Name.Skip(4)))
-                        ?? throw new Exception($"Failed to get property for {String.Join(String.Empty, invocation.Method.Name.Skip(4))}");
-
-                    var columnName = nav_property.Name;
-                    var table_name = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType) ?? string.Empty;
-
                     // Check if the generic type is supported by the
                     // wayback machine
                     if (_wayback.SupportsType(genericType)) {
 
                         // Check if its an object that supports a list
                         var castType = typeof(List<>).MakeGenericType(genericType);
-                        if (castType.IsAssignableFrom(returnType)) {
 
-                            // Get the actual result from the EFCore object
-                            // and if its null then also return null
+                        if (!IsJunction) {
+                            if (castType.IsAssignableFrom(returnType)) {
+
+
+                                var targetTableName = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
+                                    ?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
+
+
+                                var targetAuditEntries = _wayback._dbcontext.AuditEntries.Where(s =>
+                                        s.TableName == targetTableName &&
+                                        s.PropertyName == targetForeignKey.Name &&
+                                        s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
+                                        (s.OldValue == entity_id.ToString() || s.NewValue == entity_id.ToString())
+                                    )
+                                    .OrderBy(s => s.ParentTransaction.ChangeDate)
+                                    .ToList();
+
+
+
+
+
+                                // Get the actual result from the EFCore object
+                                // and if its null then also return null
+                                var invocationResult = (IList?)invocation.Method.Invoke(_target, invocation.Arguments);
+                                if (invocationResult == null) {
+                                    invocationResult = (IList)(Activator.CreateInstance(castType)
+                                        ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
+                                }
+
+
+                                // Get the .GenerateEntityGeneric(object, Type, DateTime) method from the
+                                // wayback context and store it in a variable so we can invoke it in the loop
+                                // Oh and make it a generic method and apply the generic type 
+
+                                //var waybackGeneratorMethod = (typeof(WayBack).GetMethod("GenerateEntityGeneric")
+                                //    ?? throw new Exception("Couldn't get the method that generates proxies in the wayback class (⊙_⊙;)")
+                                //).MakeGenericMethod(genericType);
+
+
+                                var returnList = (IList)(Activator.CreateInstance(castType)
+                                    ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
+
+                                // Loop over the invocation results
+                                // and create proxies and add them to the list
+                                foreach (object obj in invocationResult) {
+                                    if (targetAuditEntries.Any(s => s.OldValue == null && s.EntityID == obj.GetPrimaryKeyValue())) continue;
+                                    returnList.Add(_wayback.GenerateEntity(obj, genericType));
+                                }
+
+                                foreach (var auditEntry in targetAuditEntries.Where(s => s.OldValue == entity_id.ToString()).ToList())
+                                    returnList.Add(_wayback.GenerateEntity(targetTableName, auditEntry.EntityID));
+
+                                invocation.ReturnValue = returnList;
+                                ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
+                                return;
+                            }
+
+                        } else {
+
+                            var junctionTable = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(targetForeignKey.DeclaringEntityType.ClrType)
+                                ?? throw new Exception("Failed to get the junction table");
+
+                            var srcTable = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
+                                ?? throw new Exception("Failed to get the source table");
+
+                            var destTable = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
+                                ?? throw new Exception("Failed to get the destination table");
+
+
+                            var targetAuditEntries = _wayback._dbcontext.AuditEntries
+                                .Where(s =>
+                                    s.TableName == junctionTable &&
+                                    s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
+                                    (
+                                        (s.J1Table == srcTable && s.J1 == entity_id) ||
+                                        (s.J2Table == srcTable && s.J2 == entity_id)
+                                    ))
+                                .OrderByDescending(s => s.ParentTransaction.ChangeDate);
+
                             var invocationResult = (IList?)invocation.Method.Invoke(_target, invocation.Arguments);
                             if (invocationResult == null) {
                                 invocationResult = (IList)(Activator.CreateInstance(castType)
                                     ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
                             }
 
-
-                            // Get the .GenerateEntityGeneric(object, Type, DateTime) method from the
-                            // wayback context and store it in a variable so we can invoke it in the loop
-                            // Oh and make it a generic method and apply the generic type 
-
-                            //var waybackGeneratorMethod = (typeof(WayBack).GetMethod("GenerateEntityGeneric")
-                            //    ?? throw new Exception("Couldn't get the method that generates proxies in the wayback class (⊙_⊙;)")
-                            //).MakeGenericMethod(genericType);
-
-
                             var returnList = (IList)(Activator.CreateInstance(castType)
-                                ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
+                                    ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
 
                             // Loop over the invocation results
                             // and create proxies and add them to the list
                             foreach (object obj in invocationResult) {
+                                if (targetAuditEntries.Any(s =>
+                                    (s.J2 == entity_id && s.J1 == obj.GetPrimaryKeyValue() && s.J1Table == destTable && s.ChangeType == AuditEntryType.CollectionAdd) ||
+                                    (s.J1 == entity_id && s.J2 == obj.GetPrimaryKeyValue() && s.J2Table == destTable && s.ChangeType == AuditEntryType.CollectionAdd)
+                                )) continue;
                                 returnList.Add(_wayback.GenerateEntity(obj, genericType));
                             }
 
-                            var revertAuditLogs = _wayback._dbcontext.AuditEntries
-                                .Where(s =>
-                                    s.EntityID == entity_id &&
-                                    s.TableName == table_name &&
-                                    s.PropertyName == columnName &&
-                                    s.ParentTransaction.ChangeDate >= _wayback._revertPoint
-                                )
-                                .OrderByDescending(s => s.ParentTransaction.ChangeDate)
-                                .ToList();
+                            foreach (var auditEntry in targetAuditEntries.Where(s =>
+                                    (s.J2 == entity_id && s.J1 == _target.GetPrimaryKeyValue() && s.J1Table == srcTable && s.ChangeType == AuditEntryType.CollectionRemove) ||
+                                    (s.J1 == entity_id && s.J2 == _target.GetPrimaryKeyValue() && s.J2Table == srcTable && s.ChangeType == AuditEntryType.CollectionRemove)
+                                ))
+                                returnList.Add(_wayback.GenerateEntity(destTable, auditEntry.GetJunctionKeyForTable(destTable)));
 
-                            foreach (var auditEntry in revertAuditLogs) {
-                                switch (auditEntry.ChangeType) {
-                                    case AuditEntryType.CollectionAdd:
-                                        returnList.Remove(_wayback.GenerateEntity(genericType, Int32.Parse(auditEntry.NewValue ?? "-1")));
-                                        break;
-
-                                    case AuditEntryType.CollectionRemove:
-                                        returnList.Add(_wayback.GenerateEntity(genericType, Int32.Parse(auditEntry.NewValue ?? "-1")));
-                                        break;
-                                }
-                            }
                             invocation.ReturnValue = returnList;
                             ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
                             return;
@@ -386,13 +445,19 @@ namespace CastleProxiesTest {
             }
             invocation.ReturnValue = invocation.Method.Invoke(_target, invocation.Arguments);
         }
-
-
     }
 
     public static class MyExtensions {
         public static IQueryable<object> TypeSet(this DbContext _context, Type t) {
             return (IQueryable<object>)_context.GetType().GetMethod("Set", types: Type.EmptyTypes).MakeGenericMethod(t).Invoke(_context, null);
+        }
+
+        internal static int GetPrimaryKeyValue(this object o) {
+            var entity_id = (int)(o.GetType()
+                          .GetProperties()
+                          .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
+                          .GetValue(o) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
+            return entity_id;
         }
     }
 }

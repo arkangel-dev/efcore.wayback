@@ -4,6 +4,7 @@ using CastleProxiesTest;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CastleProxiesTest.Migrations
 {
     [DbContext(typeof(DatabaseContext))]
-    partial class DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20230704091440_IDee")]
+    partial class IDee
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -131,18 +134,6 @@ namespace CastleProxiesTest.Migrations
 
                     b.Property<int>("EntityID")
                         .HasColumnType("int");
-
-                    b.Property<int?>("J1")
-                        .HasColumnType("int");
-
-                    b.Property<string>("J1Table")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("J2")
-                        .HasColumnType("int");
-
-                    b.Property<string>("J2Table")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("NewValue")
                         .HasColumnType("nvarchar(max)");

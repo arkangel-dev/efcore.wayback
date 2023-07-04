@@ -59,7 +59,7 @@ public int BaseSaveChanges() => base.SaveChanges();
 this.ConfigureWaybackModel(modelBuilder);
 ```
 
-4. Override the `SaveChanges` method of the database context to call the extension method `WaybackMachine.WaybackDbContextExtension.SaveChangesWithTracking` like so
+4. Override the `SaveChanges` method of the database context to call the extension method `WaybackMachine.WaybackDbContextExtension.SaveChangesWithTracking` like so. This step is optional
 
 ```C#
 public override int SaveChanges() => this.SaveChangesWithTracking();
@@ -70,7 +70,12 @@ public override int SaveChanges() => this.SaveChangesWithTracking();
 ## Attributes
 
 `DoNotAudit` : Properties with this attribute will not be audited and tracked
+
 `CensorAudit` : Properties with this attribute will only have the hashes saved. Only works for `byte[]` and `string`
+
 `JunctionTable` : This indicates to Wayback that a class is a junction for handling Many-To-Many relationships
+
 `Audit` : This indicates to Wayback that an entity should be audited and tracked
+
+`SoftDelete` : This indicates that entities have to be soft deleted instead of hard deletes. If this attribute is added to an entity, then it implemented a `bool IsDeleted` parameter. If this attribute is implemented, the `OnModelCreating` method will also implement a Query filter on it
 
