@@ -30,6 +30,8 @@ namespace WaybackTests {
             context.Junction_Interests_Users.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
+            context.AuditProperties.ExecuteDelete();
+            context.AuditTables.ExecuteDelete();
             context.AuditTransactions.ExecuteDelete();
             context.Interests.ExecuteDelete();
             context.SaveChanges();

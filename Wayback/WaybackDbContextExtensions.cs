@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System;
 using System.Collections.Generic;
@@ -25,12 +26,33 @@ namespace WaybackMachine {
     }
     public static class WaybackDbContextExtensions {
 
-        internal static string GetTableName(this Type type) {
-            Type currentType = type;
-            while (true) {
-                if (currentType.BaseType == typeof(object) || currentType.BaseType == null) return currentType.Name;
-                currentType = currentType.BaseType;
+        internal static AuditTable GetTableEnitity(this Type type, IWaybackContext context, bool ReadOnly = false) {
+            var typeName = type.GetBase().Name;
+            var result = context.AuditTables.FirstOrDefault(s => s.Name == typeName);
+            if (result == null) result = context._tempAuditTables.FirstOrDefault(s => s.Name == typeName);
+            if (result == null && !ReadOnly) {
+                result = new AuditTable() { Name = typeName };
+                context._tempAuditTables.Add(result);
+                context.AuditTables.Add(result);
             }
+            return result;
+        }
+
+        internal static AuditProperty GetPropertyEntity(this PropertyEntry property, Type type, IWaybackContext context, bool ReadOnly = false) {
+            var propertyName = property.Metadata.Name;
+
+            var tableentity = type.GetTableEnitity(context);
+            var result = context.AuditProperties.FirstOrDefault(s => s.Name == propertyName && s.ParentTable.ID == tableentity.ID);
+            if (result == null) result = context._tempAuditProperties.FirstOrDefault(s => s.Name == propertyName);
+            if (result == null && !ReadOnly) {
+                result = new AuditProperty() {  
+                    Name = propertyName,
+                    ParentTable = tableentity
+                };
+                context._tempAuditProperties.Add(result);
+                context.AuditProperties.Add(result);
+            }
+            return result;
         }
 
         internal static Type GetBase(this Type type) {
@@ -120,8 +142,9 @@ namespace WaybackMachine {
             if (TableToTypeCache.TryGetValue(t, out result))
                 return result;
 
+           
             result = dbcontext.Model.GetEntityTypes()
-            .FirstOrDefault(s => s.ClrType.GetTableName() == t)
+            .FirstOrDefault(s => s.ClrType.GetTableEnitity(((IWaybackContext)dbcontext)).Name == t)
             ?.ClrType;
 
             TableToTypeCache.Add(t, result);
@@ -174,14 +197,14 @@ namespace WaybackMachine {
                     if (entry.State == EntityState.Deleted && isJunction) {
                         var fks = entry.Metadata.GetForeignKeys().ToList();
 
-                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableName();
-                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableName();
+                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(context);
+                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(context);
                         var index_a = (fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
                         var index_b = (fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
                             EntityID = entry.Entity.GetPrimaryKeyValue().Serialize(),
-                            TableName = entryType.BaseType.GetTableName() ?? "unknown",
+                            Table = entryType.BaseType.GetTableEnitity(context),
                             J1 = index_a.Serialize(),
                             J2 = index_b.Serialize(),
                             J1Table = table_a,
@@ -212,6 +235,7 @@ namespace WaybackMachine {
                            .GetProperties()
                            .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
 
+                    
                     foreach (var property in entry.Properties) {
                         if (property == null) continue;
                         if (!property.IsModified) continue;
@@ -229,9 +253,9 @@ namespace WaybackMachine {
                         }
 ;
                         var changeRecord = new AuditRecord() {
-                            PropertyName = property.Metadata.Name,
+                            Property = property.GetPropertyEntity(entryType, context),
                             EntityID = entry.Entity.GetPrimaryKeyValue().Serialize(),
-                            TableName = entryType?.GetTableName() ?? $"{entryType.Name} (unknown)",
+                            Table = entryType?.GetTableEnitity(context),
                             OldValue = ((object)OriginalValue).Serialize(),
                             NewValue = ((object)CurrentValue).Serialize(),
                             ChangeType = AuditEntryType.PropertyOrReferenceChange
@@ -268,15 +292,15 @@ namespace WaybackMachine {
                     if (IsJunction) {
                         var fks = entry.Metadata.GetForeignKeys().ToList();
 
-                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableName();
-                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableName();
+                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(context);
+                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(context);
 
                         var index_a = (fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
                         var index_b = (fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
                             EntityID = entry.Entity.GetPrimaryKeyValue().Serialize(),
-                            TableName = entryType.GetTableName(),
+                            Table = entryType.GetTableEnitity(context),
 
                             J1 = index_a.Serialize(),
                             J2 = index_b.Serialize(),
@@ -294,12 +318,14 @@ namespace WaybackMachine {
 
                     transactionRecord.Changes.Add(new AuditRecord() {
                         EntityID = (IDProperty.GetValue(entry.Entity) ?? -1).Serialize(),
-                        TableName = entryType.GetTableName(),
+                        Table = entryType.GetTableEnitity(context),
                         ChangeType = AuditEntryType.Created
                     });
                 }
                 context.AuditTransactions.Add(transactionRecord);
                 transaction.Commit();
+                context._tempAuditTables.Clear();
+                context._tempAuditProperties.Clear();
                 return context.BaseSaveChanges();
             } catch (Exception) {
                 transaction.Rollback();
