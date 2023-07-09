@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +11,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using WaybackMachine;
 using WaybackMachine.Entities;
@@ -29,12 +33,42 @@ namespace WaybackMachine {
             }
         }
 
+        internal static Type GetBase(this Type type) {
+            Type currentType = type;
+            while (true) {
+                if (currentType.BaseType == typeof(object) || currentType.BaseType == null) return currentType;
+                currentType = currentType.BaseType;
+            }
+        }
+
+
+
+        //public static PropertyBuilder HasJsonConversion(this PropertyBuilder propertyBuilder) {
+        //    ValueConverter<object, String> converter = new ValueConverter<object, String>(
+        //        v => JsonSerializer.Serialize(v, v.GetType(), new JsonSerializerOptions()),
+        //        v => JsonSerializer.Deserialize<dynamic>(v, new JsonSerializerOptions())
+        //    );
+
+        //    ValueComparer comparer = new ValueComparer(
+        //        (l, r) => l.ToJsonString(null) == r.ToJsonString(null),
+        //        v => v == null ? 0 : v.ToJsonString(null).GetHashCode(),
+        //        v => JsonNode.Parse(v.ToJsonString(null), null, new System.Text.Json.JsonDocumentOptions()).AsObject());
+
+        //    propertyBuilder.HasConversion(converter);
+        //    propertyBuilder.Metadata.SetValueConverter(converter);
+        //    propertyBuilder.Metadata.SetValueComparer(comparer);
+
+        //    return propertyBuilder;
+        //}
+
 
         public static void ConfigureWaybackModel(this IWaybackContext context, ModelBuilder modelBuilder) {
             modelBuilder.Entity<AuditTransactionRecord>()
                 .HasMany(s => s.Changes)
                 .WithOne(s => s.ParentTransaction);
 
+
+       
 
 
             var contextType = context.InternalDbContext.GetType().GetProperties();
@@ -115,6 +149,7 @@ namespace WaybackMachine {
             return dbSet.Find(Id);
         }
 
+
         public static int SaveChangesWithTracking(this IWaybackContext context) {
 
             var transaction = context.InternalDbContext.Database.BeginTransaction();
@@ -141,14 +176,14 @@ namespace WaybackMachine {
 
                         var table_a = fks[0].PrincipalEntityType.ClrType.GetTableName();
                         var table_b = fks[1].PrincipalEntityType.ClrType.GetTableName();
-                        var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
-                        var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
+                        var index_a = (fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
+                        var index_b = (fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
-                            EntityID = entry.Entity.GetPrimaryKeyValue(),
+                            EntityID = entry.Entity.GetPrimaryKeyValue().Serialize(),
                             TableName = entryType.BaseType.GetTableName() ?? "unknown",
-                            J1 = index_a,
-                            J2 = index_b,
+                            J1 = index_a.Serialize(),
+                            J2 = index_b.Serialize(),
                             J1Table = table_a,
                             J2Table = table_b,
                             ChangeType = AuditEntryType.CollectionRemove
@@ -192,13 +227,13 @@ namespace WaybackMachine {
                             CurrentValue = converter.ConvertToProvider(CurrentValue);
                             OriginalValue = converter.ConvertToProvider(OriginalValue);
                         }
-
+;
                         var changeRecord = new AuditRecord() {
                             PropertyName = property.Metadata.Name,
-                            EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
+                            EntityID = entry.Entity.GetPrimaryKeyValue().Serialize(),
                             TableName = entryType?.GetTableName() ?? $"{entryType.Name} (unknown)",
-                            OldValue = OriginalValue?.ToString(),
-                            NewValue = CurrentValue?.ToString(),
+                            OldValue = ((object)OriginalValue).Serialize(),
+                            NewValue = ((object)CurrentValue).Serialize(),
                             ChangeType = AuditEntryType.PropertyOrReferenceChange
                         };
 
@@ -217,7 +252,7 @@ namespace WaybackMachine {
                     dynamic? CurrentValue = property.CurrentValue;
                     var converter = property.Metadata.GetValueConverter();
                     if (converter != null) CurrentValue = converter.ConvertToProvider(CurrentValue);
-                    auditRecord.NewValue = CurrentValue?.ToString();
+                    auditRecord.NewValue = JsonSerializer.Serialize(CurrentValue);
                 }
 
                 foreach (var entry in addedEntities) {
@@ -236,15 +271,15 @@ namespace WaybackMachine {
                         var table_a = fks[0].PrincipalEntityType.ClrType.GetTableName();
                         var table_b = fks[1].PrincipalEntityType.ClrType.GetTableName();
 
-                        var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
-                        var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
+                        var index_a = (fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
+                        var index_b = (fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
-                            EntityID = entry.Entity.GetPrimaryKeyValue(),
+                            EntityID = entry.Entity.GetPrimaryKeyValue().Serialize(),
                             TableName = entryType.GetTableName(),
 
-                            J1 = index_a,
-                            J2 = index_b,
+                            J1 = index_a.Serialize(),
+                            J2 = index_b.Serialize(),
 
                             J1Table = table_a,
                             J2Table = table_b,
@@ -258,7 +293,7 @@ namespace WaybackMachine {
                         .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
 
                     transactionRecord.Changes.Add(new AuditRecord() {
-                        EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
+                        EntityID = (IDProperty.GetValue(entry.Entity) ?? -1).Serialize(),
                         TableName = entryType.GetTableName(),
                         ChangeType = AuditEntryType.Created
                     });
