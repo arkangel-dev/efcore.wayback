@@ -74,5 +74,6 @@ namespace CastleProxiesTest {
         public DbContext InternalDbContext => this;
         public DbSet<AuditRecord> AuditEntries { get; set; }
         public DbSet<AuditTransactionRecord> AuditTransactions { get; set; }
+        public WaybackConfig WaybackConfiguration { get; set; } = new WaybackConfig();
     }
 }

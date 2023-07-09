@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace CastleProxiesTest.DbEntities {
+    [Table("UserL")]
     public class User {
 
         public User() {

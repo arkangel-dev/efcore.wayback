@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Diagnostics;
+using WaybackMachine;
 
 namespace WaybackTests {
     [TestClass]

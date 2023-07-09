@@ -11,6 +11,7 @@ namespace WaybackMachine {
         DbSet<AuditRecord> AuditEntries { get; set; }
         DbSet<AuditTransactionRecord> AuditTransactions { get; set; }
         DbContext InternalDbContext { get; }
+        WaybackConfig WaybackConfiguration { get; set; } 
         int BaseSaveChanges();
 
     

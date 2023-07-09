@@ -3,6 +3,7 @@ using CastleProxiesTest;
 using CastleProxiesTest.DbEntities;
 using System.Data;
 using System.Diagnostics;
+using WaybackMachine;
 
 internal class Program {
     private static void Main(string[] args) {

@@ -4,13 +4,15 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.VisualBasic;
 using System.Collections;
+using System.ComponentModel;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.Serialization.Formatters.Binary;
 using WaybackMachine;
 using WaybackMachine.Entities;
 using WaybackMachine.FilterAttributes;
 
-namespace CastleProxiesTest {
+namespace WaybackMachine {
     public class WayBack {
 
         internal IWaybackContext _dbcontext;
@@ -118,8 +120,7 @@ namespace CastleProxiesTest {
         /// <param name="id">Primary key of the target table name to target</param>
         /// <returns>Proxy entity to use</returns>
         public object? GenerateEntity(Type type, int id) {
-            object? _returnVal = _dbcontext.InternalDbContext.FindEntity(_dbcontext.InternalDbContext.GetTableNameFromType(type)
-                ?? throw new Exception($"Failed to get the tablename for {type.FullName}"), id);
+            object? _returnVal = _dbcontext.InternalDbContext.FindEntity(type.Name, id);
 
             object? cacheCheck = null;
             if (_entityCacheProxies.TryGetValue(_returnVal, out cacheCheck))
@@ -162,7 +163,7 @@ namespace CastleProxiesTest {
                 ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
             // Get the table name of the entity
-            var tableName = _dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
+            var tableName = targetBaseType.Name; //_dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
 
             // Get the change history for the entity
             var auditLogs = _dbcontext.AuditEntries
@@ -176,7 +177,7 @@ namespace CastleProxiesTest {
             // Copy the values from the reference EFCore
             // entity over to the target wayback entity
             foreach (var property in targetBaseType.GetProperties()) {
-                if (property.SetMethod?.IsVirtual ?? false || (property.GetMethod?.IsVirtual ?? false)) continue;
+                if (property.SetMethod?.IsVirtual ?? true || (property.GetMethod?.IsVirtual ?? false)) continue;
                 property.SetValue(_target, property.GetValue(_reference));
             }
 
@@ -191,11 +192,12 @@ namespace CastleProxiesTest {
                 // Try to get the old value
                 // and if its not a string, then try to invoke the
                 // parse method. That will work for most properties
-                object value = al.OldValue ?? "";
+                object? value = al.OldValue ?? "";
                 if (property.PropertyType != typeof(string)) {
-                    var parseMethod = property.PropertyType.GetMethod("Parse");
-                    if (parseMethod == null) continue;
-                    value = parseMethod.Invoke(null, new[] { (string)value }) ?? throw new Exception("The parse method didn't return anything");
+                    //var parseMethod = property.PropertyType.GetMethods(BindingFlags.Public).First(s => s.Name == "Parse" && s.GetParameters().Where(x => x.DefaultValue != null).Count() == 1);
+                    //if (parseMethod == null) continue;
+                    //value = parseMethod.Invoke(null, new[] { (string)value }) ?? throw new Exception("The parse method didn't return anything");
+                    value = TypeDescriptor.GetConverter(property.PropertyType).ConvertFromInvariantString((string)value);
                 }
 
                 // Set the value
@@ -281,12 +283,11 @@ namespace CastleProxiesTest {
                 // single navigational property
                 if (_wayback.SupportsType(returnType)) {
 
-                    var sourceTableName = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
-                                ?? throw new Exception($"Failed to get the table name for type `{entityType.FullName}`");
+                    var sourceTableName = entityType.Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
+                                //?? throw new Exception($"Failed to get the table name for type `{entityType.FullName}`");
 
-                    var targetTableName = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType)
-                                ?? throw new Exception($"Failed to get the table name for type `{returnType.FullName}`");
-
+                    var targetTableName = returnType.Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType)
+                                //?? throw new Exception($"Failed to get the table name for type `{returnType.FullName}`");
 
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);
 
@@ -336,8 +337,8 @@ namespace CastleProxiesTest {
                             if (castType.IsAssignableFrom(returnType)) {
 
 
-                                var targetTableName = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
-                                    ?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
+                                var targetTableName = genericType.Name;//_wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
+                                    //?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
 
 
                                 var targetAuditEntries = _wayback._dbcontext.AuditEntries.Where(s =>
@@ -349,10 +350,6 @@ namespace CastleProxiesTest {
                                     .OrderBy(s => s.ParentTransaction.ChangeDate)
                                     .ToList();
 
-
-
-
-
                                 // Get the actual result from the EFCore object
                                 // and if its null then also return null
                                 var invocationResult = (IList?)invocation.Method.Invoke(_target, invocation.Arguments);
@@ -361,15 +358,9 @@ namespace CastleProxiesTest {
                                         ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
                                 }
 
-
                                 // Get the .GenerateEntityGeneric(object, Type, DateTime) method from the
                                 // wayback context and store it in a variable so we can invoke it in the loop
                                 // Oh and make it a generic method and apply the generic type 
-
-                                //var waybackGeneratorMethod = (typeof(WayBack).GetMethod("GenerateEntityGeneric")
-                                //    ?? throw new Exception("Couldn't get the method that generates proxies in the wayback class (⊙_⊙;)")
-                                //).MakeGenericMethod(genericType);
-
 
                                 var returnList = (IList)(Activator.CreateInstance(castType)
                                     ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
@@ -382,7 +373,7 @@ namespace CastleProxiesTest {
                                         s.TableName == targetTableName &&
                                         s.EntityID == obj.GetPrimaryKeyValue() &&
                                         s.ChangeType == AuditEntryType.Created &&
-                                        s.ParentTransaction.ChangeDate >= _wayback._revertPoint
+                                        s.ParentTransaction.ChangeDate > _wayback._revertPoint
                                     )) continue;
                                     returnList.Add(_wayback.GenerateEntity(obj, genericType));
                                 }
@@ -397,15 +388,9 @@ namespace CastleProxiesTest {
 
                         } else {
 
-                            var junctionTable = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(targetForeignKey.DeclaringEntityType.ClrType)
-                                ?? throw new Exception("Failed to get the junction table");
-
-                            var srcTable = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
-                                ?? throw new Exception("Failed to get the source table");
-
-                            var destTable = _wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
-                                ?? throw new Exception("Failed to get the destination table");
-
+                            var junctionTable = targetForeignKey.DeclaringEntityType.ClrType.Name;
+                            var srcTable = entityType.GetTableName();
+                            var destTable = genericType.GetTableName();
 
                             var targetAuditEntries = _wayback._dbcontext.AuditEntries
                                 .Where(s =>
@@ -465,5 +450,7 @@ namespace CastleProxiesTest {
                           .GetValue(o) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
             return entity_id;
         }
+
+        
     }
 }

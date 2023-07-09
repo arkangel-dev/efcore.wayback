@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace WaybackMachine.FilterAttributes {
-    [AttributeUsage(AttributeTargets.Property, Inherited = true)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Class, Inherited = true)]
     public class DoNotAudit : Attribute { }
 
     [AttributeUsage(AttributeTargets.Property, Inherited = true)]
