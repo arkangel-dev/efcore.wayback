@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CastleProxiesTest.Migrations
 {
     [DbContext(typeof(DatabaseContext))]
-    [Migration("20230709100556_StringType")]
-    partial class StringType
+    [Migration("20230709131227_Consolidate2")]
+    partial class Consolidate2
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -120,6 +120,28 @@ namespace CastleProxiesTest.Migrations
                     b.ToTable("UserL");
                 });
 
+            modelBuilder.Entity("WaybackMachine.Entities.AuditProperty", b =>
+                {
+                    b.Property<int>("ID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ID"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ParentTableID")
+                        .HasColumnType("int");
+
+                    b.HasKey("ID");
+
+                    b.HasIndex("ParentTableID");
+
+                    b.ToTable("AuditProperties");
+                });
+
             modelBuilder.Entity("WaybackMachine.Entities.AuditRecord", b =>
                 {
                     b.Property<int>("ID")
@@ -132,21 +154,20 @@ namespace CastleProxiesTest.Migrations
                         .IsUnicode(false)
                         .HasColumnType("int");
 
-                    b.Property<string>("EntityID")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int>("EntityID")
+                        .HasColumnType("int");
 
-                    b.Property<string>("J1")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("J1")
+                        .HasColumnType("int");
 
-                    b.Property<string>("J1Table")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("J1TableID")
+                        .HasColumnType("int");
 
-                    b.Property<string>("J2")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("J2")
+                        .HasColumnType("int");
 
-                    b.Property<string>("J2Table")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("J2TableID")
+                        .HasColumnType("int");
 
                     b.Property<string>("NewValue")
                         .HasColumnType("nvarchar(max)");
@@ -157,18 +178,42 @@ namespace CastleProxiesTest.Migrations
                     b.Property<int>("ParentTransactionID")
                         .HasColumnType("int");
 
-                    b.Property<string>("PropertyName")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("PropertyID")
+                        .HasColumnType("int");
 
-                    b.Property<string>("TableName")
+                    b.Property<int>("TableID")
+                        .HasColumnType("int");
+
+                    b.HasKey("ID");
+
+                    b.HasIndex("J1TableID");
+
+                    b.HasIndex("J2TableID");
+
+                    b.HasIndex("ParentTransactionID");
+
+                    b.HasIndex("PropertyID");
+
+                    b.HasIndex("TableID");
+
+                    b.ToTable("AuditEntries");
+                });
+
+            modelBuilder.Entity("WaybackMachine.Entities.AuditTable", b =>
+                {
+                    b.Property<int>("ID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ID"));
+
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("ID");
 
-                    b.HasIndex("ParentTransactionID");
-
-                    b.ToTable("AuditEntries");
+                    b.ToTable("AuditTables");
                 });
 
             modelBuilder.Entity("WaybackMachine.Entities.AuditTransactionRecord", b =>
@@ -235,15 +280,52 @@ namespace CastleProxiesTest.Migrations
                     b.Navigation("BestFriend");
                 });
 
+            modelBuilder.Entity("WaybackMachine.Entities.AuditProperty", b =>
+                {
+                    b.HasOne("WaybackMachine.Entities.AuditTable", "ParentTable")
+                        .WithMany()
+                        .HasForeignKey("ParentTableID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ParentTable");
+                });
+
             modelBuilder.Entity("WaybackMachine.Entities.AuditRecord", b =>
                 {
+                    b.HasOne("WaybackMachine.Entities.AuditTable", "J1Table")
+                        .WithMany()
+                        .HasForeignKey("J1TableID");
+
+                    b.HasOne("WaybackMachine.Entities.AuditTable", "J2Table")
+                        .WithMany()
+                        .HasForeignKey("J2TableID");
+
                     b.HasOne("WaybackMachine.Entities.AuditTransactionRecord", "ParentTransaction")
                         .WithMany("Changes")
                         .HasForeignKey("ParentTransactionID")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("WaybackMachine.Entities.AuditProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyID");
+
+                    b.HasOne("WaybackMachine.Entities.AuditTable", "Table")
+                        .WithMany()
+                        .HasForeignKey("TableID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("J1Table");
+
+                    b.Navigation("J2Table");
+
                     b.Navigation("ParentTransaction");
+
+                    b.Navigation("Property");
+
+                    b.Navigation("Table");
                 });
 
             modelBuilder.Entity("CastleProxiesTest.DbEntities.User", b =>

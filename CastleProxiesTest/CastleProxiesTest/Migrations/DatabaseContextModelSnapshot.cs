@@ -151,18 +151,17 @@ namespace CastleProxiesTest.Migrations
                         .IsUnicode(false)
                         .HasColumnType("int");
 
-                    b.Property<string>("EntityID")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int>("EntityID")
+                        .HasColumnType("int");
 
-                    b.Property<string>("J1")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("J1")
+                        .HasColumnType("int");
 
                     b.Property<int?>("J1TableID")
                         .HasColumnType("int");
 
-                    b.Property<string>("J2")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int?>("J2")
+                        .HasColumnType("int");
 
                     b.Property<int?>("J2TableID")
                         .HasColumnType("int");

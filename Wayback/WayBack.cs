@@ -8,7 +8,6 @@ using System.ComponentModel;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.Serialization.Formatters.Binary;
-using System.Text.Json;
 using WaybackMachine;
 using WaybackMachine.Entities;
 using WaybackMachine.FilterAttributes;
@@ -101,7 +100,7 @@ namespace WaybackMachine {
         /// <param name="tablename">Table name to target</param>
         /// <param name="id">Primary key to target</param>
         /// <returns>Proxy entity to use</returns>        
-        public object GenerateEntity(string tablename, object id) {
+        public object GenerateEntity(string tablename, int id) {
             object? _returnVal = _dbcontext.InternalDbContext.FindEntity(tablename, id);
 
             object? cacheCheck = null;
@@ -157,25 +156,23 @@ namespace WaybackMachine {
 
             // Get the entity ID by getting the ID property
             // and using it on the entity
-            var entityID = (_target.GetType()
+            var entityID = (int)(_target.GetType()
                             .GetProperties()
                             .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
                             .GetValue(_reference)
                 ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
             // Get the table name of the entity
-            var tableName = targetBaseType.GetTableEnitity(_dbcontext); //_dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
+            var tableName = targetBaseType.Name; //_dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
 
-            var serializedID = entityID.Serialize();
             // Get the change history for the entity
             var auditLogs = _dbcontext.AuditEntries
                 .Where(s =>
-                    s.EntityID == serializedID &&
-                    s.Table == tableName &&
+                    s.EntityID == entityID &&
+                    s.Table.Name == tableName &&
                     s.ParentTransaction.ChangeDate >= _revertPoint &&
                     s.ChangeType == AuditEntryType.PropertyOrReferenceChange)
-                .OrderByDescending(s => s.ParentTransaction.ChangeDate)
-                .ToList();
+                .OrderByDescending(s => s.ParentTransaction.ChangeDate);
 
             // Copy the values from the reference EFCore
             // entity over to the target wayback entity
@@ -185,7 +182,7 @@ namespace WaybackMachine {
             }
 
             // Iterate over the audit logs and revert the changes
-            foreach (var al in auditLogs) {
+            foreach (var al in auditLogs.ToList()) {
 
                 // Get the property based on the auditlog PropertyName
                 // if it returns null, then continue
@@ -195,13 +192,14 @@ namespace WaybackMachine {
                 // Try to get the old value
                 // and if its not a string, then try to invoke the
                 // parse method. That will work for most properties
-                object? value = JsonSerializer.Deserialize( al.OldValue ?? "", property.PropertyType);
-                //if (property.PropertyType != typeof(string)) {
-                //    //var parseMethod = property.PropertyType.GetMethods(BindingFlags.Public).First(s => s.Name == "Parse" && s.GetParameters().Where(x => x.DefaultValue != null).Count() == 1);
-                //    //if (parseMethod == null) continue;
-                //    //value = parseMethod.Invoke(null, new[] { (string)value }) ?? throw new Exception("The parse method didn't return anything");
-                //    value = TypeDescriptor.GetConverter(property.PropertyType).ConvertFromInvariantString((string)value);
-                //}
+                object? value = al.OldValue ?? "";
+                if (property.PropertyType != typeof(string)) {
+                    //var parseMethod = property.PropertyType.GetMethods(BindingFlags.Public).First(s => s.Name == "Parse" && s.GetParameters().Where(x => x.DefaultValue != null).Count() == 1);
+                    //if (parseMethod == null) continue;
+                    //value = parseMethod.Invoke(null, new[] { (string)value }) ?? throw new Exception("The parse method didn't return anything");
+                    value = TypeDescriptor.GetConverter(property.PropertyType).ConvertFromInvariantString((string)value);
+                }
+
                 // Set the value
                 property.SetValue(_target, value);
             }
@@ -250,7 +248,7 @@ namespace WaybackMachine {
 
                 var propertyName = String.Join(String.Empty, invocation.Method.Name.Skip(4));
                 var returnType = invocation.Method.ReturnParameter.ParameterType;
-                var entity_id = (_target.GetType()
+                var entity_id = (int)(_target.GetType()
                           .GetProperties()
                           .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
                           .GetValue(_target) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
@@ -293,13 +291,11 @@ namespace WaybackMachine {
 
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);
 
-
-                    var serializedEntityId = entity_id.Serialize();
                     var latestUpdate = _wayback._dbcontext.AuditEntries
                         .Where(s =>
                             s.Property.Name == targetForeignKey.Name &&
                             s.Table.Name == sourceTableName &&
-                            s.EntityID == serializedEntityId &&
+                            s.EntityID == entity_id &&
                             s.ParentTransaction.ChangeDate >= _wayback._revertPoint
                         )
                         .OrderByDescending(s => s.ParentTransaction.ChangeDate)
@@ -311,19 +307,23 @@ namespace WaybackMachine {
                         return;
                     }
 
-                    var returnTypePrimaryKey = invocation.Method.ReturnType.GetPrimaryKeyField().PropertyType;
 
-
-                    var newResult = _wayback.GenerateEntity(targetTableName, JsonSerializer.Deserialize(latestUpdate.OldValue, returnTypePrimaryKey));
+                    var newResult = _wayback.GenerateEntity(targetTableName, Int32.Parse(latestUpdate.OldValue));
                     invocation.ReturnValue = newResult;
                     ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
                     return;
+
+
+
                 }
 
                 // Check if the methods return type has generic
                 // type arguments, This might be a sign that its a
                 // collection
                 if (returnType.GenericTypeArguments.Any()) {
+
+
+
 
                     var genericType = returnType.GenericTypeArguments.First();
                     // Check if the generic type is supported by the
@@ -338,16 +338,14 @@ namespace WaybackMachine {
 
 
                                 var targetTableName = genericType.Name;//_wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
-                                                                       //?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
+                                    //?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
 
-
-                                var serialized_entity_id = entity_id.Serialize();
 
                                 var targetAuditEntries = _wayback._dbcontext.AuditEntries.Where(s =>
                                         s.Table.Name == targetTableName &&
                                         s.Property.Name == targetForeignKey.Name &&
                                         s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
-                                        (s.OldValue == serialized_entity_id || s.NewValue == serialized_entity_id)
+                                        (s.OldValue == entity_id.ToString() || s.NewValue == entity_id.ToString())
                                     )
                                     .OrderBy(s => s.ParentTransaction.ChangeDate)
                                     .ToList();
@@ -367,18 +365,13 @@ namespace WaybackMachine {
                                 var returnList = (IList)(Activator.CreateInstance(castType)
                                     ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
 
-                                var returnTypePrimaryKeyType = genericType.GetPrimaryKeyField().PropertyType;
-
                                 // Loop over the invocation results
                                 // and create proxies and add them to the list
                                 foreach (object obj in invocationResult) {
-                                    var primaryKey = obj.GetPrimaryKeyValue();
-                                    if (targetAuditEntries.Any(s => s.OldValue == null && s.EntityID.Deserialize(primaryKey.GetType()) == primaryKey)) continue;
-
-                                    var serializedPrimaryKey = primaryKey.Serialize();
+                                    if (targetAuditEntries.Any(s => s.OldValue == null && s.EntityID == obj.GetPrimaryKeyValue())) continue;
                                     if (_wayback._dbcontext.AuditEntries.Any(s => 
                                         s.Table.Name == targetTableName &&
-                                        s.EntityID == serializedPrimaryKey &&
+                                        s.EntityID == obj.GetPrimaryKeyValue() &&
                                         s.ChangeType == AuditEntryType.Created &&
                                         s.ParentTransaction.ChangeDate > _wayback._revertPoint
                                     )) continue;
@@ -386,7 +379,7 @@ namespace WaybackMachine {
                                 }
 
                                 foreach (var auditEntry in targetAuditEntries.Where(s => s.OldValue == entity_id.ToString()).ToList())
-                                    returnList.Add(_wayback.GenerateEntity(targetTableName, auditEntry.EntityID.Deserialize(returnTypePrimaryKeyType)));
+                                    returnList.Add(_wayback.GenerateEntity(targetTableName, auditEntry.EntityID));
 
                                 invocation.ReturnValue = returnList;
                                 ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
@@ -396,16 +389,16 @@ namespace WaybackMachine {
                         } else {
 
                             var junctionTable = targetForeignKey.DeclaringEntityType.ClrType.Name;
-                            var srcTable = entityType.GetTableEnitity(_wayback._dbcontext, true);
-                            var destTable = genericType.GetTableEnitity(_wayback._dbcontext, true);
+                            var srcTable = entityType.GetTableEnitity(_wayback._dbcontext);
+                            var destTable = genericType.GetTableEnitity(_wayback._dbcontext);
 
                             var targetAuditEntries = _wayback._dbcontext.AuditEntries
                                 .Where(s =>
                                     s.Table.Name == junctionTable &&
                                     s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
                                     (
-                                        (s.J1Table == srcTable && s.J1 == entity_id) ||
-                                        (s.J2Table == srcTable && s.J2 == entity_id)
+                                        (s.J1Table.ID == srcTable.ID && s.J1 == entity_id) ||
+                                        (s.J2Table.ID == srcTable.ID && s.J2 == entity_id)
                                     ))
                                 .OrderByDescending(s => s.ParentTransaction.ChangeDate);
 
@@ -429,10 +422,10 @@ namespace WaybackMachine {
                             }
 
                             foreach (var auditEntry in targetAuditEntries.Where(s =>
-                                    (s.J2 == entity_id && s.J1 == _target.GetPrimaryKeyValue() && s.J1Table == srcTable && s.ChangeType == AuditEntryType.CollectionRemove) ||
-                                    (s.J1 == entity_id && s.J2 == _target.GetPrimaryKeyValue() && s.J2Table == srcTable && s.ChangeType == AuditEntryType.CollectionRemove)
+                                    (s.J2 == entity_id && s.J1 == _target.GetPrimaryKeyValue() && s.J1Table.ID == srcTable.ID && s.ChangeType == AuditEntryType.CollectionRemove) ||
+                                    (s.J1 == entity_id && s.J2 == _target.GetPrimaryKeyValue() && s.J2Table.ID == srcTable.ID && s.ChangeType == AuditEntryType.CollectionRemove)
                                 ))
-                                returnList.Add(_wayback.GenerateEntity(destTable.Name, auditEntry.GetJunctionKeyForTable(destTable.Name, entityType.GetType().GetPrimaryKeyField().GetType())));
+                                returnList.Add(_wayback.GenerateEntity(destTable.Name, auditEntry.GetJunctionKeyForTable(destTable.Name)));
 
                             invocation.ReturnValue = returnList;
                             ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
@@ -450,7 +443,7 @@ namespace WaybackMachine {
             return (IQueryable<object>)_context.GetType().GetMethod("Set", types: Type.EmptyTypes).MakeGenericMethod(t).Invoke(_context, null);
         }
 
-        internal static object GetPrimaryKeyValue(this object o) {
+        internal static int GetPrimaryKeyValue(this object o) {
             var entity_id = (int)(o.GetType()
                           .GetProperties()
                           .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
@@ -458,22 +451,6 @@ namespace WaybackMachine {
             return entity_id;
         }
 
-        internal static string? Serialize(this object? o) {
-            if (o == null) return null;
-            return JsonSerializer.Serialize(o, o.GetType(), new JsonSerializerOptions());
-        }
-
-        internal static object? Deserialize(this string? o, Type t) {
-            if (o == null) return null;
-            return JsonSerializer.Deserialize(o, t, new JsonSerializerOptions());
-        }
-
-        internal static PropertyInfo GetPrimaryKeyField(this Type o) {
-
-            return o.GetBase()
-                    .GetProperties()
-                    .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
-        }
         
     }
 }

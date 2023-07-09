@@ -11,22 +11,22 @@ namespace WaybackMachine.Entities {
     public class AuditRecord {
         [Key]
         public int ID { get; set; }
-        public string EntityID { get; set; }
+        public int EntityID { get; set; }
         public virtual AuditTable Table { get; set; }
         public virtual AuditProperty? Property { get; set; }
         public string? OldValue { get; set; }
         public string? NewValue { get; set; }
 
         public virtual AuditTable? J1Table { get; set; }
-        public string? J1 { get; set; }
+        public int? J1 { get; set; }
         public virtual AuditTable? J2Table { get; set; }
-        public string? J2 { get; set; }
+        public int? J2 { get; set; }
         public AuditEntryType ChangeType { get; set; }
         public virtual AuditTransactionRecord ParentTransaction { get; set; }
 
-        public object GetJunctionKeyForTable(string s, Type keyType) {
-            if (s == J2Table.Name) return J2.Deserialize(keyType);
-            if (s == J1Table.Name) return J1.Deserialize(keyType);
+        public int GetJunctionKeyForTable(string s) {
+            if (s == J2Table.Name) return (int)J2;
+            if (s == J1Table.Name) return (int)J1;
             return -1;
         } 
     }

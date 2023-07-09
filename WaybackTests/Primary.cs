@@ -30,8 +30,6 @@ namespace WaybackTests {
             context.Junction_Interests_Users.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
-            context.AuditProperties.ExecuteDelete();
-            context.AuditTables.ExecuteDelete();
             context.AuditTransactions.ExecuteDelete();
             context.Interests.ExecuteDelete();
             context.SaveChanges();
@@ -145,8 +143,8 @@ namespace WaybackTests {
 
             var read_sw = new Stopwatch();
             read_sw.Start();
-            Assert.AreNotEqual(0, oldsam.Sent.Count);
-            Assert.AreEqual(0, sam.Sent.Count);
+            Assert.AreNotEqual(0, oldsam.Sent.Count());
+            Assert.AreEqual(0, sam.Sent.Count());
             read_sw.Stop();
             Console.WriteLine($"Read Operation Completed in {read_sw.ElapsedMilliseconds}ms");
         }

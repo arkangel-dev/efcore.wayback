@@ -5,7 +5,7 @@
 namespace CastleProxiesTest.Migrations
 {
     /// <inheritdoc />
-    public partial class NewConsolidation : Migration
+    public partial class Consolidate2 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
