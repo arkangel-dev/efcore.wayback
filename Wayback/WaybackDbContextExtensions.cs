@@ -152,7 +152,7 @@ namespace WaybackMachine {
                 var explicitClassMode = (context.WaybackConfiguration.TrackingMode & WaybackConfig.TrackingModes.ExplicitClasses) != 0;
                 var explicitPropertyMode = (context.WaybackConfiguration.TrackingMode & WaybackConfig.TrackingModes.ExplicitProperties) != 0;
                 var addedEntities = new List<EntityEntry>();
-                var temporaryProperies = new List<Tuple<PropertyEntry, AuditRecord>>();
+                var temporaryProperties = new List<Tuple<PropertyEntry, AuditRecord>>();
                 var transactionRecord = new AuditTransactionRecord() {
                     TransactionID = Guid.NewGuid(),
                     ChangeDate = DateTime.Now
@@ -189,6 +189,7 @@ namespace WaybackMachine {
 
                         deleteProperty.SetValue(entry.Entity, true);
                         entry.State = EntityState.Modified;
+                        continue;
                     }
 
                     if (entry.Entity is AuditRecord || entry.Entity is AuditTransactionRecord || entry.State == EntityState.Unchanged) continue;
@@ -202,9 +203,9 @@ namespace WaybackMachine {
                     }
                     if (entry.State != EntityState.Modified) continue;
 
-                    var IDProperty = entry.Entity.GetType()
-                           .GetProperties()
-                           .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
+                    var IDProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
+                    var IDValue = IDProperty.GetValue(entry.Entity);
+                    var tableEntity = entryType.GetTableEnitity(context);
 
                     foreach (var property in entry.Properties) {
                         if (property == null) continue;
@@ -212,28 +213,29 @@ namespace WaybackMachine {
                         if (explicitPropertyMode && !(explicitClassMode && isAuditable))
                             if (property.Metadata.FieldInfo.GetCustomAttribute(typeof(Audit)) == null) continue;
 
-                        string propertyName = property.Metadata.Name;
-                        dynamic? CurrentValue = property.CurrentValue;
-                        dynamic? OriginalValue = property.OriginalValue;
+                        object? CurrentValue = property.CurrentValue;
+                        object? OriginalValue = property.OriginalValue;
 
+                        object? CurrentValue_converted = null;
+                        object? OriginalValue_converted = null;
                         var converter = property.Metadata.GetValueConverter();
-                        if (converter != null) {
-                            CurrentValue = converter.ConvertToProvider(CurrentValue);
-                            OriginalValue = converter.ConvertToProvider(OriginalValue);
-                        }
 
+                        if (converter != null) {
+                            CurrentValue_converted = converter.ConvertToProvider(CurrentValue);
+                            OriginalValue_converted = converter.ConvertToProvider(OriginalValue);
+                        } 
 
                         var changeRecord = new AuditRecord() {
                             Property = property.GetPropertyEntity(entryType, context),
-                            EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
-                            Table = entryType.GetTableEnitity(context),
-                            OldValue = OriginalValue?.ToString(),
-                            NewValue = CurrentValue?.ToString(),
+                            EntityID = (int)(IDValue ?? -1),
+                            Table = tableEntity,
+                            OldValue = (converter != null ? OriginalValue_converted : OriginalValue)?.ToString(),
+                            NewValue = (converter != null ? CurrentValue_converted : CurrentValue)?.ToString(),
                             ChangeType = AuditEntryType.PropertyOrReferenceChange
                         };
 
                         if (property.IsTemporary)
-                            temporaryProperies.Add(Tuple.Create(property, changeRecord));
+                            temporaryProperties.Add(Tuple.Create(property, changeRecord));
 
                         transactionRecord.Changes.Add(changeRecord);
                     }
@@ -241,22 +243,18 @@ namespace WaybackMachine {
 
                 context.BaseSaveChanges();
 
-                foreach (var entry in temporaryProperies) {
-                    var property = entry.Item1;
-                    var auditRecord = entry.Item2;
-                    dynamic? CurrentValue = property.CurrentValue;
-                    var converter = property.Metadata.GetValueConverter();
+                foreach (var entry in temporaryProperties) {
+                    dynamic? CurrentValue = entry.Item1.CurrentValue;
+                    var converter = entry.Item1.Metadata.GetValueConverter();
                     if (converter != null) CurrentValue = converter.ConvertToProvider(CurrentValue);
-                    auditRecord.NewValue = CurrentValue?.ToString();
+                    entry.Item2.NewValue = CurrentValue?.ToString();
                 }
 
                 foreach (var entry in addedEntities) {
-                    Type entryType = entry.Entity.GetType()
+                    Type entryType = entry.Entity.GetType().GetBase()
                         ?? throw new Exception("Failed to get the damn type");
 
-                    var entityPrimaryKeyProperty = entry.Entity.GetType()
-                                .GetProperties()
-                                .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
+                    var entityPrimaryKeyProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
                     var id = (int)(entityPrimaryKeyProperty.GetValue(entry.Entity) ?? -1);
 
                     var IsJunction = entryType.GetCustomAttribute(typeof(JunctionTable), true) != null;
@@ -282,13 +280,8 @@ namespace WaybackMachine {
                         });
                         continue;
                     }
-
-                    var IDProperty = entry.Entity.GetType()
-                        .GetProperties()
-                        .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
-
                     transactionRecord.Changes.Add(new AuditRecord() {
-                        EntityID = (int)(IDProperty.GetValue(entry.Entity) ?? -1),
+                        EntityID = id,
                         Table = entryType.GetTableEnitity(context),
                         ChangeType = AuditEntryType.Created
                     });

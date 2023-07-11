@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.VisualBasic;
 using System.Collections;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.Serialization.Formatters.Binary;
@@ -176,6 +177,10 @@ namespace WaybackMachine {
 
             // Copy the values from the reference EFCore
             // entity over to the target wayback entity
+
+            //var properties = targetBaseType.GetProperties();
+
+
             foreach (var property in targetBaseType.GetProperties()) {
                 if (property.SetMethod?.IsVirtual ?? true || (property.GetMethod?.IsVirtual ?? false)) continue;
                 property.SetValue(_target, property.GetValue(_reference));
@@ -194,9 +199,6 @@ namespace WaybackMachine {
                 // parse method. That will work for most properties
                 object? value = al.OldValue ?? "";
                 if (property.PropertyType != typeof(string)) {
-                    //var parseMethod = property.PropertyType.GetMethods(BindingFlags.Public).First(s => s.Name == "Parse" && s.GetParameters().Where(x => x.DefaultValue != null).Count() == 1);
-                    //if (parseMethod == null) continue;
-                    //value = parseMethod.Invoke(null, new[] { (string)value }) ?? throw new Exception("The parse method didn't return anything");
                     value = TypeDescriptor.GetConverter(property.PropertyType).ConvertFromInvariantString((string)value);
                 }
 
@@ -269,7 +271,7 @@ namespace WaybackMachine {
 
                 var efNavProperty = efCoreEntityType.FindNavigation(propertyName);
 
-                if (efNavProperty != null) { 
+                if (efNavProperty != null) {
                     targetForeignKey = efNavProperty.ForeignKey.Properties.First();
                 } else {
                     IsJunction = true;
@@ -284,10 +286,10 @@ namespace WaybackMachine {
                 if (_wayback.SupportsType(returnType)) {
 
                     var sourceTableName = entityType.Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
-                                //?? throw new Exception($"Failed to get the table name for type `{entityType.FullName}`");
+                                                           //?? throw new Exception($"Failed to get the table name for type `{entityType.FullName}`");
 
                     var targetTableName = returnType.Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType)
-                                //?? throw new Exception($"Failed to get the table name for type `{returnType.FullName}`");
+                                                           //?? throw new Exception($"Failed to get the table name for type `{returnType.FullName}`");
 
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);
 
@@ -338,17 +340,10 @@ namespace WaybackMachine {
 
 
                                 var targetTableName = genericType.Name;//_wayback._dbcontext.InternalDbContext.GetTableNameFromType(genericType)
-                                    //?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
+                                                                       //?? throw new Exception($"Failed to get the table name for type `{genericType.FullName}`");
 
 
-                                var targetAuditEntries = _wayback._dbcontext.AuditEntries.Where(s =>
-                                        s.Table.Name == targetTableName &&
-                                        s.Property.Name == targetForeignKey.Name &&
-                                        s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
-                                        (s.OldValue == entity_id.ToString() || s.NewValue == entity_id.ToString())
-                                    )
-                                    .OrderBy(s => s.ParentTransaction.ChangeDate)
-                                    .ToList();
+
 
                                 // Get the actual result from the EFCore object
                                 // and if its null then also return null
@@ -367,14 +362,23 @@ namespace WaybackMachine {
 
                                 // Loop over the invocation results
                                 // and create proxies and add them to the list
+
+                                var targetAuditEntries = _wayback._dbcontext.AuditEntries.Where(s =>
+                                   s.Table.Name == targetTableName &&
+                                   s.Property.Name == targetForeignKey.Name &&
+                                   s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
+                                   (s.OldValue == entity_id.ToString() || s.NewValue == entity_id.ToString())
+                                ).OrderBy(s => s.ParentTransaction.ChangeDate);
+
+                                var createNewPrefetch = _wayback._dbcontext.AuditEntries.Where(s =>
+                                    s.Table.Name == targetTableName &&
+                                    s.ChangeType == AuditEntryType.Created &&
+                                    s.ParentTransaction.ChangeDate > _wayback._revertPoint
+                                );
+
                                 foreach (object obj in invocationResult) {
                                     if (targetAuditEntries.Any(s => s.OldValue == null && s.EntityID == obj.GetPrimaryKeyValue())) continue;
-                                    if (_wayback._dbcontext.AuditEntries.Any(s => 
-                                        s.Table.Name == targetTableName &&
-                                        s.EntityID == obj.GetPrimaryKeyValue() &&
-                                        s.ChangeType == AuditEntryType.Created &&
-                                        s.ParentTransaction.ChangeDate > _wayback._revertPoint
-                                    )) continue;
+                                    if (createNewPrefetch.Any(s => s.EntityID == obj.GetPrimaryKeyValue())) continue;
                                     returnList.Add(_wayback.GenerateEntity(obj, genericType));
                                 }
 
@@ -451,6 +455,17 @@ namespace WaybackMachine {
             return entity_id;
         }
 
-        
+        internal static PropertyInfo GetPrimaryKeyField(this object o, Dictionary<Type, PropertyInfo>? cache = null) {
+            PropertyInfo? entity_id_field = null;
+            if (cache != null) {
+                if (cache.TryGetValue(o.GetType(), out entity_id_field)) return entity_id_field;
+            }
+            entity_id_field = o.GetType()
+                          .GetProperties()
+                          .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
+            if (cache != null) 
+                cache.Add(o.GetType(), entity_id_field);
+            return entity_id_field;
+        }
     }
 }
