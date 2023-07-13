@@ -1,5 +1,5 @@
-﻿using CastleProxiesTest.DbEntities;
-using CastleProxiesTest;
+﻿using Sample.DbEntities;
+using Sample;
 using System;
 using System.Collections.Generic;
 using System.Linq;

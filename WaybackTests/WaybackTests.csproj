@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CastleProxiesTest\CastleProxiesTest.csproj" />
+    <ProjectReference Include="..\Sample\Sample.csproj" />
   </ItemGroup>
 
 </Project>

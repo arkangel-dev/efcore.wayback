@@ -1,5 +1,5 @@
-using CastleProxiesTest;
-using CastleProxiesTest.DbEntities;
+using Sample;
+using Sample.DbEntities;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using WaybackMachine;
@@ -16,12 +16,13 @@ namespace WaybackTests {
         public Primary() {
 
         }
-
         [TestInitialize]
         public void Setup() {
             sam = null;
             yas = null;
             jim = null;
+
+
 
             context = new DatabaseContext();
             context.Database.EnsureCreated();
@@ -45,7 +46,6 @@ namespace WaybackTests {
             context.SaveChanges();
 
         }
-
 
 
         [TestMethod]
@@ -112,8 +112,6 @@ namespace WaybackTests {
             Assert.AreEqual(1, oldsam.Sent.Count());
         }
 
-
-
         [TestMethod("One to Many Reversal (Existing Entries)")]
         public void OneToManyReversal_ExistingEntries() {
 
@@ -152,6 +150,7 @@ namespace WaybackTests {
 
             Assert.AreNotEqual(0, x_count);
             Assert.AreEqual(0, y_count);
+
         }
 
         [TestMethod("One To Many Relationship Integrity Check")]
@@ -218,7 +217,6 @@ namespace WaybackTests {
             Assert.AreNotEqual(0, sam.Interests.Count);
         }
 
-
         [TestMethod("Many to Many (Existing)")]
         public void ManyToManyReversal_ExistingEntries() {
             ManyToManyReversal_NewEntries();
@@ -257,7 +255,6 @@ namespace WaybackTests {
             Assert.AreEqual(2, oldsam.Interests.Count);
             Assert.AreEqual(3, sam.Interests.Count);
         }
-
         [TestMethod("Many to Many (Dual Jump Back)")]
         public void ManyToManyReversal_ExtendExistingJumpBack() {
 
@@ -377,6 +374,7 @@ namespace WaybackTests {
             Assert.AreEqual(0, sam.Sent.FCount());
             Assert.AreEqual(1, context.Messages.IgnoreQueryFilters().Count());
         }
+
 
         [TestMethod("Soft Delete Reversal")]
         public void SoftDeleteReversal() {

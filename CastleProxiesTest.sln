@@ -7,7 +7,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CastleProxiesTest", "Castle
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WaybackTests", "WaybackTests\WaybackTests.csproj", "{3BBBA2A0-430C-4D20-9ACC-80EA8918A754}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WaybackMachine", "Wayback\WaybackMachine.csproj", "{AB983B0E-7A7C-456F-83E4-3829DC4AB15A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WaybackMachine", "Wayback\WaybackMachine.csproj", "{AB983B0E-7A7C-456F-83E4-3829DC4AB15A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sample", "Sample\Sample.csproj", "{724DCE0E-C553-4867-9CBA-4A3D1465DFE6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -27,6 +29,10 @@ Global
 		{AB983B0E-7A7C-456F-83E4-3829DC4AB15A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AB983B0E-7A7C-456F-83E4-3829DC4AB15A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AB983B0E-7A7C-456F-83E4-3829DC4AB15A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{724DCE0E-C553-4867-9CBA-4A3D1465DFE6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{724DCE0E-C553-4867-9CBA-4A3D1465DFE6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{724DCE0E-C553-4867-9CBA-4A3D1465DFE6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{724DCE0E-C553-4867-9CBA-4A3D1465DFE6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

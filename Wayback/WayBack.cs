@@ -83,10 +83,12 @@ namespace WaybackMachine {
         public object GenerateEntity(object _target, Type t) {
             // Try to get the entity from the cache and 
             // succesful return that
-            object? returnObj = _entityCacheProxies.Values.FirstOrDefault(x => x == _target);
-            if (returnObj != null) return returnObj;
+            object? returnObj = null;
             if (_entityCacheProxies.TryGetValue(_target, out returnObj))
                 return returnObj;
+
+            returnObj = _entityCacheProxies.Values.FirstOrDefault(x => x == _target);
+            if (returnObj != null) return returnObj;
 
             // Other wise create a new wayback intercept based on the object
             // revert the changes and return it
