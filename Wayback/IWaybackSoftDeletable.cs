@@ -6,6 +6,6 @@ using System.Threading.Tasks;
 
 namespace WaybackMachine {
     public interface IWaybackSoftDeletable {
-        public bool IsDeleted { get; set; }
+        public DateTime? DeleteDate { get; set; }
     }
 }

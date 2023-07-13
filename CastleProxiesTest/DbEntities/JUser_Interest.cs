@@ -9,7 +9,6 @@ using WaybackMachine.FilterAttributes;
 
 namespace CastleProxiesTest.DbEntities {
     [JunctionTable]
-    [SoftDelete]
     public class JUser_Interest {
         [Key]
         public int ID { get; set; }
@@ -17,6 +16,5 @@ namespace CastleProxiesTest.DbEntities {
         public virtual User User { get; set; }
         public int InterestID { get; set; }
         public virtual Interest Interest { get; set; }
-        public bool IsDeleted { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Internal;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,10 +19,10 @@ namespace WaybackMachine {
 
     public static class SoftDeleteHelper<T> {
         public static LambdaExpression ExcludeSoftDeleted() =>
-            (T o) => !EF.Property<bool>(o, "IsDeleted");
+            (T o) => EF.Property<DateTime?>(o, "DeleteDate") == null;
     }
     public static class WaybackDbContextExtensions {
-        internal static AuditTable GetTableEnitity(this Type type, IWaybackContext context, bool ReadOnly = false) {
+        internal static AuditTable? GetTableEnitity(this Type type, IWaybackContext context, bool ReadOnly = false) {
             var typeName = type.GetBase().Name;
             var result = context.AuditTables.FirstOrDefault(s => s.Name == typeName);
             if (result == null) result = context._tempAuditTables.FirstOrDefault(s => s.Name == typeName);
@@ -33,9 +34,8 @@ namespace WaybackMachine {
             return result;
         }
 
-        internal static AuditProperty GetPropertyEntity(this PropertyEntry property, Type type, IWaybackContext context, bool ReadOnly = false) {
+        internal static AuditProperty? GetPropertyEntity(this PropertyEntry property, Type type, IWaybackContext context, bool ReadOnly = false) {
             var propertyName = property.Metadata.Name;
-
             var tableentity = type.GetTableEnitity(context);
             var result = context.AuditProperties.FirstOrDefault(s => s.Name == propertyName && s.ParentTable.ID == tableentity.ID);
             if (result == null) result = context._tempAuditProperties.FirstOrDefault(s => s.Name == propertyName);
@@ -58,13 +58,10 @@ namespace WaybackMachine {
             }
         }
 
-
         public static void ConfigureWaybackModel(this IWaybackContext context, ModelBuilder modelBuilder) {
             modelBuilder.Entity<AuditTransactionRecord>()
                 .HasMany(s => s.Changes)
                 .WithOne(s => s.ParentTransaction);
-
-
 
             var contextType = context.InternalDbContext.GetType().GetProperties();
             var types = context.InternalDbContext.GetType()
@@ -75,24 +72,90 @@ namespace WaybackMachine {
                 .Where(s => s.GetCustomAttribute(typeof(SoftDelete)) != null)
                 .ToList();
 
-            //foreach (var type in types) {
+            foreach (var type in types) {
 
+                // TODO : Change this to a proper lamdba expression
+                LambdaExpression? lambda = (LambdaExpression?)
+                    (
+                        typeof(SoftDeleteHelper<>)
+                            .MakeGenericType(type)
+                            .GetMethod("ExcludeSoftDeleted")
+                                ?? throw new Exception("Failed to get soft delete generator method")
+                    ).Invoke(null, null);
 
-            //    LambdaExpression lambda = (LambdaExpression)
-            //        (typeof(SoftDeleteHelper<>).MakeGenericType(type).GetMethod("ExcludeSoftDeleted") ?? throw new Exception()).Invoke(null, null);
-
-
-            //    modelBuilder.Entity(type)
-            //        .HasQueryFilter(lambda)
-            //        .Property(typeof(bool), "IsDeleted")
-            //        .IsRequired(true);
-            //}
-            //modelBuilder.Entity()
+                modelBuilder.Entity(type)
+                    .HasQueryFilter(lambda)
+                    .Property(typeof(DateTime?), "DeleteDate")
+                    .IsRequired(false);
+            }
         }
 
 
         private static Dictionary<Type, string?> TypeToTableCache = new Dictionary<Type, string?>();
         private static Dictionary<string, Type?> TableToTypeCache = new Dictionary<string, Type?>();
+
+
+        public static int FCount<T>(this IEnumerable<T> collection) {
+            if (typeof(IWaybackSoftDeletable).IsAssignableFrom(typeof(T))) {
+                return collection.Cast<IWaybackSoftDeletable>().Count(x => x.DeleteDate == null);
+            }
+            return collection.Count();
+        }
+
+        public static int FCount<T>(this IEnumerable<T> collection, Expression<Func<T, bool>> predicate) {
+            if (typeof(IWaybackSoftDeletable).IsAssignableFrom(typeof(T))) {
+                return collection.Cast<IWaybackSoftDeletable>()
+                    .AsQueryable()
+                    .Where(x => x.DeleteDate == null)
+                    .Cast<T>()
+                    .Count(predicate);
+            }
+            return collection.AsQueryable().Count(predicate);
+        }
+
+        public static T FFirst<T>(this IEnumerable<T> collection, Expression<Func<T, bool>> predicate) {
+            if (typeof(IWaybackSoftDeletable).IsAssignableFrom(typeof(T))) {
+                return collection.Cast<IWaybackSoftDeletable>()
+                    .AsQueryable()
+                    .Where(x => x.DeleteDate == null)
+                    .Cast<T>()
+                    .First(predicate);
+            }
+            return collection.AsQueryable().First(predicate);
+        }
+
+        public static T? FFirstOrDefault<T>(this IEnumerable<T> collection, Expression<Func<T, bool>> predicate) {
+            if (typeof(IWaybackSoftDeletable).IsAssignableFrom(typeof(T))) {
+                return collection.Cast<IWaybackSoftDeletable>()
+                    .AsQueryable()
+                    .Where(x => x.DeleteDate == null)
+                    .Cast<T>()
+                    .FirstOrDefault(predicate);
+            }
+            return collection.AsQueryable().FirstOrDefault(predicate);
+        }
+
+        public static T? FSingleOrDefault<T>(this IEnumerable<T> collection, Expression<Func<T, bool>> predicate) {
+            if (typeof(IWaybackSoftDeletable).IsAssignableFrom(typeof(T))) {
+                return collection.Cast<IWaybackSoftDeletable>()
+                    .AsQueryable()
+                    .Where(x => x.DeleteDate == null)
+                    .Cast<T>()
+                    .SingleOrDefault(predicate);
+            }
+            return collection.AsQueryable().SingleOrDefault(predicate);
+        }
+
+        public static IEnumerable<T> FWhere<T>(this IEnumerable<T> collection, Expression<Func<T, bool>> predicate) {
+            if (typeof(IWaybackSoftDeletable).IsAssignableFrom(typeof(T))) {
+                return collection.Cast<IWaybackSoftDeletable>()
+                    .AsQueryable()
+                    .Where(x => x.DeleteDate == null)
+                    .Cast<T>()
+                    .Where(predicate);
+            }
+            return collection.AsQueryable().Where(predicate);
+        }
 
         internal static string? GetTableNameFromType(this DbContext dbcontext, Type t) {
             string? result = null;
@@ -116,32 +179,93 @@ namespace WaybackMachine {
                 return result;
 
             result = dbcontext.Model.GetEntityTypes()
-            .FirstOrDefault(s => s.ClrType.GetTableEnitity((IWaybackContext)dbcontext).Name == t)
-            ?.ClrType;
+                .FirstOrDefault(s => s.ClrType.GetTableEnitity((IWaybackContext)dbcontext).Name == t)?
+                .ClrType;
 
             TableToTypeCache.Add(t, result);
             return result;
         }
 
-        internal static int GetKey<T>(this DbContext dbcontext, T entity) {
-            var keyName = dbcontext.Model.FindEntityType(typeof(T)).FindPrimaryKey().Properties
-                .Select(x => x.Name).Single();
-            return (int)entity.GetType().GetProperty(keyName).GetValue(entity, null);
+        internal static dynamic FindSingleOrDefault(this DbContext dbcontext, string table, object Id) {
+            Type TableType = dbcontext.GetTypeFromTableName(table)
+               ?? throw new Exception($"Failed to get type for table {table}");
+
+            var setMethod = typeof(DbContext).GetMethod("Set", new Type[] { }).MakeGenericMethod(TableType);
+            object dbSet = setMethod.Invoke(dbcontext, null);
+
+            var expressionParameter = Expression.Parameter(TableType, "p");
+            var expression = (Expression)Expression.Lambda(
+                Expression.Equal(
+                    Expression.Property(expressionParameter, TableType.GetPrimaryKeyField()),
+                    Expression.Constant(Id)
+                ), expressionParameter);
+
+            var SingleOrDefaultIQFMethod = (typeof(WaybackDbContextExtensions)
+                .GetMethod("IQF_SingleOrDefault")
+                    ?? throw new Exception("Failed to get the IQF_SingleOrDefault Method"))
+                .MakeGenericMethod(TableType);
+
+            return SingleOrDefaultIQFMethod.Invoke(null, new[] { dbSet, expression });
         }
 
-        internal static dynamic FindEntity(this DbContext dbcontext, string table, object Id) {
+        internal static dynamic FindWhere(this DbContext dbcontext, string table, Expression expression) {
             Type TableType = dbcontext.GetTypeFromTableName(table)
-                ?? throw new Exception($"Failed to get type for table {table}");
+               ?? throw new Exception($"Failed to get type for table {table}");
 
-            Type DbSetType = typeof(DbSet<>).MakeGenericType(TableType);
-            PropertyInfo prop = dbcontext.GetType()
-                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                .FirstOrDefault(s => s.PropertyType == DbSetType)
-                ?? throw new Exception($"Failed to get the DbSet property for typeof {TableType.Name} from DatabaseContext");
+            var setMethod = typeof(DbContext).GetMethod("Set", new Type[] { }).MakeGenericMethod(TableType);
+            object dbSet = setMethod.Invoke(dbcontext, null);
 
-            dynamic dbSet = prop.GetValue(dbcontext, null)
-                ?? throw new Exception($"DbSet property returned null");
-            return dbSet.Find(Id);
+
+
+            var IQF_WhereMethod = (typeof(WaybackDbContextExtensions)
+                .GetMethod("IQF_Where")
+                    ?? throw new Exception("Failed to get the IQF_Where Method"))
+                .MakeGenericMethod(TableType);
+
+            return IQF_WhereMethod.Invoke(null, new[] { dbSet, expression });
+        }
+        
+
+        internal static int GetPrimaryKeyValue(this object o) {
+            var entity_id = (int)(o.GetType()
+                          .GetProperties()
+                          .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
+                          .GetValue(o) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
+            return entity_id;
+        }
+
+        internal static PropertyInfo GetPrimaryKeyField(this object o, Dictionary<Type, PropertyInfo>? cache = null) {
+            PropertyInfo? entity_id_field = null;
+            if (cache != null) {
+                if (cache.TryGetValue(o.GetType(), out entity_id_field)) return entity_id_field;
+            }
+            entity_id_field = o.GetType()
+                          .GetProperties()
+                          .First(s => s.GetCustomAttribute(typeof(System.ComponentModel.DataAnnotations.KeyAttribute)) != null);
+            if (cache != null)
+                cache.Add(o.GetType(), entity_id_field);
+            return entity_id_field;
+        }
+
+        internal static PropertyInfo GetPrimaryKeyField(this Type o, Dictionary<Type, PropertyInfo>? cache = null) {
+            PropertyInfo? entity_id_field = null;
+            if (cache != null) {
+                if (cache.TryGetValue(o.GetType(), out entity_id_field)) return entity_id_field;
+            }
+            entity_id_field = o
+                          .GetProperties()
+                          .First(s => s.GetCustomAttribute(typeof(System.ComponentModel.DataAnnotations.KeyAttribute)) != null);
+            if (cache != null)
+                cache.Add(o.GetType(), entity_id_field);
+            return entity_id_field;
+        }
+
+        public static IQueryable<T> IQF_Where<T>(this DbSet<T> set, Expression filterExpression) where T : class {
+            return set.IgnoreQueryFilters().Where((Expression<Func<T, bool>>)filterExpression);
+        }
+
+        public static T? IQF_SingleOrDefault<T>(this DbSet<T> set, Expression filterExpression) where T : class {
+            return set.IgnoreQueryFilters().SingleOrDefault((Expression<Func<T, bool>>)filterExpression);
         }
 
         public static int SaveChangesWithTracking(this IWaybackContext context) {
@@ -184,34 +308,34 @@ namespace WaybackMachine {
                         });
                     }
                     if (entry.State == EntityState.Deleted && isSoftDeletable) {
-                        var deleteProperty = entryType.BaseType?.GetProperty("IsDeleted")
-                            ?? throw new Exception($"The IsDeleted Property is not defined but the SoftDeleted attribute is defined for type {entryType.BaseType.FullName}");
+                        var deleteProperty = entryType.GetBase().GetProperty("DeleteDate")
+                            ?? throw new Exception($"The DeleteDate Property is not defined but the SoftDeleted attribute is defined for type {entryType.GetBase().FullName}");
 
-                        deleteProperty.SetValue(entry.Entity, true);
-                        entry.State = EntityState.Modified;
+                        deleteProperty.SetValue(entry.Entity, DateTime.Now);
+                        entry.State = EntityState.Unchanged;
                         continue;
                     }
 
                     if (entry.Entity is AuditRecord || entry.Entity is AuditTransactionRecord || entry.State == EntityState.Unchanged) continue;
 
                     if (entry.State == EntityState.Added) {
-                        if (explicitClassMode) {
-                            if (isAuditable) continue;
-                        }
+                        if (explicitClassMode && !isAuditable) continue;
                         addedEntities.Add(entry);
                         continue;
                     }
                     if (entry.State != EntityState.Modified) continue;
 
-                    var IDProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
-                    var IDValue = IDProperty.GetValue(entry.Entity);
-                    var tableEntity = entryType.GetTableEnitity(context);
+                    var idProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
+                    var idValue = idProperty.GetValue(entry.Entity);
+                    var tableEntity = entryType.GetTableEnitity(context)
+                        ?? throw new Exception("Null returned for the table enitity");
 
                     foreach (var property in entry.Properties) {
                         if (property == null) continue;
                         if (!property.IsModified) continue;
-                        if (explicitPropertyMode && !(explicitClassMode && isAuditable))
-                            if (property.Metadata.FieldInfo.GetCustomAttribute(typeof(Audit)) == null) continue;
+                        if (explicitPropertyMode && !(explicitClassMode && isAuditable) && property.Metadata.PropertyInfo != null) {
+                            if (property.Metadata.PropertyInfo.GetCustomAttribute(typeof(Audit)) == null) continue;
+                        }
 
                         object? CurrentValue = property.CurrentValue;
                         object? OriginalValue = property.OriginalValue;
@@ -223,20 +347,18 @@ namespace WaybackMachine {
                         if (converter != null) {
                             CurrentValue_converted = converter.ConvertToProvider(CurrentValue);
                             OriginalValue_converted = converter.ConvertToProvider(OriginalValue);
-                        } 
+                        }
 
                         var changeRecord = new AuditRecord() {
                             Property = property.GetPropertyEntity(entryType, context),
-                            EntityID = (int)(IDValue ?? -1),
+                            EntityID = (int)(idValue ?? -1),
                             Table = tableEntity,
                             OldValue = (converter != null ? OriginalValue_converted : OriginalValue)?.ToString(),
                             NewValue = (converter != null ? CurrentValue_converted : CurrentValue)?.ToString(),
                             ChangeType = AuditEntryType.PropertyOrReferenceChange
                         };
 
-                        if (property.IsTemporary)
-                            temporaryProperties.Add(Tuple.Create(property, changeRecord));
-
+                        if (property.IsTemporary) temporaryProperties.Add(Tuple.Create(property, changeRecord));
                         transactionRecord.Changes.Add(changeRecord);
                     }
                 }
@@ -254,26 +376,22 @@ namespace WaybackMachine {
                     Type entryType = entry.Entity.GetType().GetBase()
                         ?? throw new Exception("Failed to get the damn type");
 
-                    var entityPrimaryKeyProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
-                    var id = (int)(entityPrimaryKeyProperty.GetValue(entry.Entity) ?? -1);
+                    var primaryKeyProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
+                    var id = (int)(primaryKeyProperty.GetValue(entry.Entity) ?? -1);
 
                     var IsJunction = entryType.GetCustomAttribute(typeof(JunctionTable), true) != null;
                     if (IsJunction) {
                         var fks = entry.Metadata.GetForeignKeys().ToList();
-
                         var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(context);
                         var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(context);
-
                         var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
                         var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
-                            EntityID = entry.Entity.GetPrimaryKeyValue(),
+                            EntityID = id,
                             Table = entryType.GetTableEnitity(context),
-
                             J1 = index_a,
                             J2 = index_b,
-
                             J1Table = table_a,
                             J2Table = table_b,
                             ChangeType = AuditEntryType.CollectionAdd

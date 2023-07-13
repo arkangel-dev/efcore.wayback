@@ -1,8 +1,12 @@
 ﻿using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using WaybackMachine;
+using WaybackMachine.FilterAttributes;
+
 namespace CastleProxiesTest.DbEntities {
-    public class Message {
+    [SoftDelete]
+    public class Message : IWaybackSoftDeletable {
         public Message() {
             Guid = Guid.NewGuid();
         }
@@ -14,5 +18,6 @@ namespace CastleProxiesTest.DbEntities {
 
         [NotMapped]
         public Guid Guid { get; set; }
+        public DateTime? DeleteDate { get; set; }
     }
 }

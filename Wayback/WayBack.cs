@@ -1,11 +1,13 @@
 ﻿using Castle.DynamicProxy;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.VisualBasic;
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.Serialization.Formatters.Binary;
@@ -102,14 +104,12 @@ namespace WaybackMachine {
         /// <param name="id">Primary key to target</param>
         /// <returns>Proxy entity to use</returns>        
         public object GenerateEntity(string tablename, int id) {
-            object? _returnVal = _dbcontext.InternalDbContext.FindEntity(tablename, id);
-
+            object? _returnVal = _dbcontext.InternalDbContext.FindSingleOrDefault(tablename, id);
             object? cacheCheck = null;
             if (_entityCacheProxies.TryGetValue(_returnVal, out cacheCheck))
                 return cacheCheck;
 
             var _type = _dbcontext.InternalDbContext.GetTypeFromTableName(tablename);
-
             _returnVal = GenerateEntity(_returnVal, _type);
             return _returnVal;
         }
@@ -121,7 +121,7 @@ namespace WaybackMachine {
         /// <param name="id">Primary key of the target table name to target</param>
         /// <returns>Proxy entity to use</returns>
         public object? GenerateEntity(Type type, int id) {
-            object? _returnVal = _dbcontext.InternalDbContext.FindEntity(type.Name, id);
+            object? _returnVal = _dbcontext.InternalDbContext.FindSingleOrDefault(type.Name, id);
 
             object? cacheCheck = null;
             if (_entityCacheProxies.TryGetValue(_returnVal, out cacheCheck))
@@ -159,12 +159,12 @@ namespace WaybackMachine {
             // and using it on the entity
             var entityID = (int)(_target.GetType()
                             .GetProperties()
-                            .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
+                            .First(s => s.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() != null)
                             .GetValue(_reference)
                 ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
             // Get the table name of the entity
-            var tableName = targetBaseType.Name; //_dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
+            var tableName = targetBaseType.GetBase().Name; //_dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
 
             // Get the change history for the entity
             var auditLogs = _dbcontext.AuditEntries
@@ -175,14 +175,10 @@ namespace WaybackMachine {
                     s.ChangeType == AuditEntryType.PropertyOrReferenceChange)
                 .OrderByDescending(s => s.ParentTransaction.ChangeDate);
 
-            // Copy the values from the reference EFCore
-            // entity over to the target wayback entity
-
-            //var properties = targetBaseType.GetProperties();
 
 
-            foreach (var property in targetBaseType.GetProperties()) {
-                if (property.SetMethod?.IsVirtual ?? true || (property.GetMethod?.IsVirtual ?? false)) continue;
+            foreach (var property in targetBaseType.GetProperties(BindingFlags.Public | BindingFlags.Instance)) {
+                if ((property.SetMethod?.IsVirtual ?? true) || (property.GetMethod?.IsVirtual ?? true)) continue;
                 property.SetValue(_target, property.GetValue(_reference));
             }
 
@@ -193,6 +189,7 @@ namespace WaybackMachine {
                 // if it returns null, then continue
                 var property = targetBaseType.GetProperty(al.Property.Name);
                 if (property == null) continue;
+                if ((property.SetMethod?.IsVirtual ?? true) || (property.GetMethod?.IsVirtual ?? true)) continue;
 
                 // Try to get the old value
                 // and if its not a string, then try to invoke the
@@ -208,6 +205,7 @@ namespace WaybackMachine {
             return _target;
         }
     }
+
 
     public class WayBackInterceptor : IInterceptor {
         internal WayBack _wayback;
@@ -347,10 +345,9 @@ namespace WaybackMachine {
 
                                 // Get the actual result from the EFCore object
                                 // and if its null then also return null
-                                var invocationResult = (IList?)invocation.Method.Invoke(_target, invocation.Arguments);
+                                var invocationResult = ((IList?)invocation.Method.Invoke(_target, invocation.Arguments)).Cast<object>().ToList();
                                 if (invocationResult == null) {
-                                    invocationResult = (IList)(Activator.CreateInstance(castType)
-                                        ?? throw new Exception($"Failed to create instance of List<{genericType.FullName}>"));
+                                    invocationResult = new List<object>();
                                 }
 
                                 // Get the .GenerateEntityGeneric(object, Type, DateTime) method from the
@@ -370,20 +367,91 @@ namespace WaybackMachine {
                                    (s.OldValue == entity_id.ToString() || s.NewValue == entity_id.ToString())
                                 ).OrderBy(s => s.ParentTransaction.ChangeDate);
 
-                                var createNewPrefetch = _wayback._dbcontext.AuditEntries.Where(s =>
+
+
+
+
+
+                                var createdEntities = _wayback._dbcontext.AuditEntries.Where(s =>
                                     s.Table.Name == targetTableName &&
                                     s.ChangeType == AuditEntryType.Created &&
                                     s.ParentTransaction.ChangeDate > _wayback._revertPoint
-                                );
+                                )
+                                    .Select(x => x.EntityID)
+                                    .ToList();
 
+                                var addedEntities = targetAuditEntries
+                                    .Where(x => x.OldValue == null)
+                                    .Select(x => x.EntityID)
+                                    .ToList();
+
+                                var containsMethod = typeof(List<int>)
+                                    .GetMethod("Contains")
+                                        ?? throw new Exception("Failed to get the contains method");
+
+                                var filterQueryParam = Expression.Parameter(typeof(object));
+                                var filterQuery = (Func<object, bool>)Expression.Lambda(
+                                        Expression.OrElse(
+                                            Expression.Call(
+                                                Expression.Constant(addedEntities),
+                                                containsMethod,
+                                                    Expression.Property(
+                                                        Expression.TypeAs(filterQueryParam, genericType), genericType.GetPrimaryKeyField().Name)
+                                            ),
+                                            Expression.Call(
+                                                Expression.Constant(createdEntities),
+                                                containsMethod,
+                                                    Expression.Property(
+                                                        Expression.TypeAs(filterQueryParam, genericType), genericType.GetPrimaryKeyField().Name)
+                                            )
+                                        ),
+                                        filterQueryParam).Compile();
+
+
+
+                                invocationResult.RemoveAll(x => filterQuery(x));
                                 foreach (object obj in invocationResult) {
-                                    if (targetAuditEntries.Any(s => s.OldValue == null && s.EntityID == obj.GetPrimaryKeyValue())) continue;
-                                    if (createNewPrefetch.Any(s => s.EntityID == obj.GetPrimaryKeyValue())) continue;
                                     returnList.Add(_wayback.GenerateEntity(obj, genericType));
                                 }
 
-                                foreach (var auditEntry in targetAuditEntries.Where(s => s.OldValue == entity_id.ToString()).ToList())
+                                foreach (var auditEntry in targetAuditEntries.Where(s => s.OldValue == entity_id.ToString()).ToList()) {
                                     returnList.Add(_wayback.GenerateEntity(targetTableName, auditEntry.EntityID));
+                                }
+
+
+                                var softDeleteProperty = genericType.GetCustomAttribute(typeof(SoftDelete)) != null ?
+                                    (genericType.GetProperty("DeleteDate") ?? throw new InvalidProgramException("SoftDelete decalared but no DeleteDate")) :
+                                    null;
+
+                                if (softDeleteProperty != null) {
+
+                                    var inParam = Expression.Parameter(genericType);
+                                    var expression = Expression.Lambda(
+                                        Expression.AndAlso(
+                                            Expression.LessThan(
+                                                Expression.Constant(_wayback._revertPoint, typeof(DateTime?)),
+                                                Expression.PropertyOrField(inParam, "DeleteDate")
+                                            ),
+                                            Expression.Equal(
+                                                Expression.Constant(entity_id),
+                                                Expression.Call(
+                                                    (
+                                                        typeof(EF).GetMethod("Property") ?? throw new Exception("")
+                                                    ).MakeGenericMethod(typeof(int)),
+                                                    inParam,
+                                                    Expression.Constant(targetForeignKey.Name, typeof(string))
+                                                )
+                                            )
+                                        ),
+                                        inParam
+                                    );
+
+                                    IList deletedSet = ((IQueryable<dynamic>)_wayback._dbcontext.InternalDbContext.FindWhere(genericType.GetBase().Name, expression)).ToList();
+                                    foreach (var deletedRecord in deletedSet) {
+                                        returnList.Add(_wayback.GenerateEntity(deletedRecord, genericType));
+                                    }
+                                }
+
 
                                 invocation.ReturnValue = returnList;
                                 ReadResultCacheDictionary.Add(invocation.Method.Name, invocation.ReturnValue);
@@ -425,10 +493,13 @@ namespace WaybackMachine {
                                 returnList.Add(_wayback.GenerateEntity(obj, genericType));
                             }
 
-                            foreach (var auditEntry in targetAuditEntries.Where(s =>
-                                    (s.J2 == entity_id && s.J1 == _target.GetPrimaryKeyValue() && s.J1Table.ID == srcTable.ID && s.ChangeType == AuditEntryType.CollectionRemove) ||
-                                    (s.J1 == entity_id && s.J2 == _target.GetPrimaryKeyValue() && s.J2Table.ID == srcTable.ID && s.ChangeType == AuditEntryType.CollectionRemove)
-                                ))
+
+                            var removedEntries = targetAuditEntries.Where(s =>
+                                    (s.J1 == entity_id && s.J1Table.ID == srcTable.ID && s.ChangeType == AuditEntryType.CollectionRemove) ||
+                                    (s.J2 == entity_id && s.J2Table.ID == srcTable.ID && s.ChangeType == AuditEntryType.CollectionRemove)
+                                ).ToList();
+
+                            foreach (var auditEntry in removedEntries)
                                 returnList.Add(_wayback.GenerateEntity(destTable.Name, auditEntry.GetJunctionKeyForTable(destTable.Name)));
 
                             invocation.ReturnValue = returnList;
@@ -442,30 +513,5 @@ namespace WaybackMachine {
         }
     }
 
-    public static class MyExtensions {
-        public static IQueryable<object> TypeSet(this DbContext _context, Type t) {
-            return (IQueryable<object>)_context.GetType().GetMethod("Set", types: Type.EmptyTypes).MakeGenericMethod(t).Invoke(_context, null);
-        }
 
-        internal static int GetPrimaryKeyValue(this object o) {
-            var entity_id = (int)(o.GetType()
-                          .GetProperties()
-                          .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
-                          .GetValue(o) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
-            return entity_id;
-        }
-
-        internal static PropertyInfo GetPrimaryKeyField(this object o, Dictionary<Type, PropertyInfo>? cache = null) {
-            PropertyInfo? entity_id_field = null;
-            if (cache != null) {
-                if (cache.TryGetValue(o.GetType(), out entity_id_field)) return entity_id_field;
-            }
-            entity_id_field = o.GetType()
-                          .GetProperties()
-                          .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
-            if (cache != null) 
-                cache.Add(o.GetType(), entity_id_field);
-            return entity_id_field;
-        }
-    }
 }

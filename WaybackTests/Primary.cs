@@ -14,7 +14,7 @@ namespace WaybackTests {
         private DatabaseContext context;
 
         public Primary() {
-           
+
         }
 
         [TestInitialize]
@@ -23,11 +23,12 @@ namespace WaybackTests {
             yas = null;
             jim = null;
 
-
             context = new DatabaseContext();
             context.Database.EnsureCreated();
+            context.Messages.IgnoreQueryFilters().ExecuteDelete();
             context.Messages.ExecuteDelete();
-            context.Junction_Interests_Users.ExecuteDelete();
+            context.Junction_Interests_Users.IgnoreQueryFilters().ExecuteDelete();
+            context.Interests.ExecuteDelete();
             context.Users.ExecuteDelete();
             context.AuditEntries.ExecuteDelete();
             context.AuditTransactions.ExecuteDelete();
@@ -143,10 +144,14 @@ namespace WaybackTests {
 
             var read_sw = new Stopwatch();
             read_sw.Start();
-            Assert.AreNotEqual(0, oldsam.Sent.Count());
-            Assert.AreEqual(0, sam.Sent.Count());
+
+            var x_count = oldsam.Sent.Count();
+            var y_count = sam.Sent.Count();
             read_sw.Stop();
             Console.WriteLine($"Read Operation Completed in {read_sw.ElapsedMilliseconds}ms");
+
+            Assert.AreNotEqual(0, x_count);
+            Assert.AreEqual(0, y_count);
         }
 
         [TestMethod("One To Many Relationship Integrity Check")]
@@ -168,7 +173,7 @@ namespace WaybackTests {
 
             sam.Sent.Clear();
             context.SaveChanges();
-            
+
             var read_sw = new Stopwatch();
             read_sw.Start();
             var wayback = WayBack.CreateWayBack(new DatabaseContext(), PreReversalTime);
@@ -355,6 +360,44 @@ namespace WaybackTests {
             Assert.AreEqual(3, oldCodingIntestest.Users.Count);
             Assert.IsTrue(oldCodingIntestest.Users.Contains(oldsam));
 
+        }
+
+        [TestMethod("Soft Deletion")]
+        public void SoftDelete() {
+            var message = new Message() {
+                Contents = "This is a deleted message",
+                Recipient = yas
+            };
+            sam.Sent.Add(message);
+            context.SaveChanges();
+
+            context.Messages.Remove(message);
+            context.SaveChanges();
+
+            Assert.AreEqual(0, sam.Sent.FCount());
+            Assert.AreEqual(1, context.Messages.IgnoreQueryFilters().Count());
+        }
+
+        [TestMethod("Soft Delete Reversal")]
+        public void SoftDeleteReversal() {
+            var message = new Message() {
+                Contents = "This is a deleted message",
+                Recipient = yas
+            };
+            sam.Sent.Add(message);
+            context.SaveChanges();
+
+            var revertPoint = DateTime.Now;
+
+            context.Messages.Remove(message);
+            context.SaveChanges();
+
+
+            var wayback = WaybackMachine.WayBack.CreateWayBack(new DatabaseContext(), revertPoint);
+
+
+            var oldSam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
+            Assert.AreEqual(1, oldSam.Sent.Count());
         }
     }
 }

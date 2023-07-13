@@ -53,6 +53,7 @@ namespace CastleProxiesTest {
                     .HasForeignKey(s => s.InterestID)
                 );
             this.ConfigureWaybackModel(modelBuilder);
+
         }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) {
