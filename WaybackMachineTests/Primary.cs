@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using WaybackMachine;
 
-namespace WaybackTests {
+namespace WaybackMachineTests {
     [TestClass]
     public class Primary {
 

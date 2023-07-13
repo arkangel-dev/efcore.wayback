@@ -129,7 +129,6 @@ namespace WaybackMachine {
             if (_entityCacheProxies.TryGetValue(_returnVal, out cacheCheck))
                 return cacheCheck;
 
-
             _returnVal = GenerateEntity(_returnVal, type);
             return _returnVal;
         }
@@ -176,7 +175,6 @@ namespace WaybackMachine {
                     s.ParentTransaction.ChangeDate >= _revertPoint &&
                     s.ChangeType == AuditEntryType.PropertyOrReferenceChange)
                 .OrderByDescending(s => s.ParentTransaction.ChangeDate);
-
 
 
             foreach (var property in targetBaseType.GetProperties(BindingFlags.Public | BindingFlags.Instance)) {

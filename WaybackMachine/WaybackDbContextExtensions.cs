@@ -157,21 +157,6 @@ namespace WaybackMachine {
             return collection.AsQueryable().Where(predicate);
         }
 
-        internal static string? GetTableNameFromType(this DbContext dbcontext, Type t) {
-            string? result = null;
-
-            if (TypeToTableCache.TryGetValue(t, out result))
-                return result;
-
-            result = dbcontext.Model.GetEntityTypes()
-                .FirstOrDefault(s => s.ClrType == t)?
-                .GetAnnotation("Relational:TableName")
-                .Value?.ToString();
-
-            TypeToTableCache.Add(t, result);
-            return result;
-        }
-
         internal static Type? GetTypeFromTableName(this DbContext dbcontext, string t) {
             Type? result = null;
 
@@ -193,7 +178,7 @@ namespace WaybackMachine {
             var setMethod = typeof(DbContext).GetMethod("Set", new Type[] { }).MakeGenericMethod(TableType);
             object dbSet = setMethod.Invoke(dbcontext, null);
 
-            var expressionParameter = Expression.Parameter(TableType, "p");
+            var expressionParameter = Expression.Parameter(TableType);
             var expression = (Expression)Expression.Lambda(
                 Expression.Equal(
                     Expression.Property(expressionParameter, TableType.GetPrimaryKeyField()),
@@ -214,8 +199,6 @@ namespace WaybackMachine {
 
             var setMethod = typeof(DbContext).GetMethod("Set", new Type[] { }).MakeGenericMethod(TableType);
             object dbSet = setMethod.Invoke(dbcontext, null);
-
-
 
             var IQF_WhereMethod = (typeof(WaybackDbContextExtensions)
                 .GetMethod("IQF_Where")

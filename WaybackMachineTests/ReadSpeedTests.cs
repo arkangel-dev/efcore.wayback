@@ -10,7 +10,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Diagnostics;
 using WaybackMachine;
 
-namespace WaybackTests {
+namespace WaybackMachineTests {
     [TestClass]
     public class ReadSpeedTests {
         private User sam;
