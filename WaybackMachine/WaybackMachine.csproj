@@ -11,7 +11,7 @@
     <RepositoryType>https://github.com/arkangel-dev/efcore.wayback</RepositoryType>
     <Description>A library to revert changes made to entities by tapping to audit logs</Description>
     <PackageTags>EFCore;Revert;Auditing</PackageTags>
-    <AssemblyVersion>1.0.2</AssemblyVersion>
+    <AssemblyVersion>1.5.2</AssemblyVersion>
     <Version>$(AssemblyVersion)</Version>
   </PropertyGroup>
 
