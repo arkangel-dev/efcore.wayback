@@ -34,6 +34,12 @@ namespace WaybackMachine {
             return result;
         }
 
+        public static void Reload(this CollectionEntry source) {
+            source.CurrentValue = null;
+            source.IsLoaded = false;
+            source.Load();
+        }
+
         internal static AuditProperty? GetPropertyEntity(this PropertyEntry property, Type type, IWaybackContext context, bool ReadOnly = false) {
             var propertyName = property.Metadata.Name;
             var tableentity = type.GetTableEnitity(context);

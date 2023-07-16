@@ -283,10 +283,10 @@ namespace WaybackMachine {
                 // single navigational property
                 if (_wayback.SupportsType(returnType)) {
 
-                    var sourceTableName = entityType.Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
+                    var sourceTableName = entityType.GetBase().Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(entityType)
                                                            //?? throw new Exception($"Failed to get the table name for type `{entityType.FullName}`");
 
-                    var targetTableName = returnType.Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType)
+                    var targetTableName = returnType.GetBase().Name; //_wayback._dbcontext.InternalDbContext.GetTableNameFromType(returnType)
                                                            //?? throw new Exception($"Failed to get the table name for type `{returnType.FullName}`");
 
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);

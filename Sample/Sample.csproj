@@ -14,8 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WaybackMachine\WaybackMachine.csproj" />
-
-	<ProjectReference Include="..\WaybackMachineTests\WaybackMachineTests.csproj" />
   </ItemGroup>
 
 </Project>

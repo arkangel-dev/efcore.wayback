@@ -371,8 +371,15 @@ namespace WaybackMachineTests {
             context.Messages.Remove(message);
             context.SaveChanges();
 
-            Assert.AreEqual(0, sam.Sent.FCount());
+
+            // Emulate resetting a collection
+            context.Entry(sam).Collection(x => x.Sent).Reload();
+
+            Assert.AreEqual(0, sam.Sent.Count());
+            Assert.AreEqual(0, context.Messages.Count());
             Assert.AreEqual(1, context.Messages.IgnoreQueryFilters().Count());
+
+
         }
 
 
