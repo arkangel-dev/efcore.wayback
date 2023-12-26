@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Internal;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -22,9 +23,11 @@ namespace WaybackMachine {
             (T o) => EF.Property<DateTime?>(o, "DeleteDate") == null;
     }
     public static class WaybackDbContextExtensions {
-        internal static AuditTable? GetTableEnitity(this Type type, IWaybackContext context, bool ReadOnly = false) {
+        internal static AuditTable? GetTableEnitity(this Type type, WaybackDbContext context, bool ReadOnly = false) {
+
             var typeName = type.GetBase().Name;
             var result = context.AuditTables.FirstOrDefault(s => s.Name == typeName);
+
             if (result == null) result = context._tempAuditTables.FirstOrDefault(s => s.Name == typeName);
             if (result == null && !ReadOnly) {
                 result = new AuditTable() { Name = typeName };
@@ -32,6 +35,7 @@ namespace WaybackMachine {
                 context.AuditTables.Add(result);
             }
             return result;
+
         }
 
         public static void Reload(this CollectionEntry source) {
@@ -40,7 +44,7 @@ namespace WaybackMachine {
             source.Load();
         }
 
-        internal static AuditProperty? GetPropertyEntity(this PropertyEntry property, Type type, IWaybackContext context, bool ReadOnly = false) {
+        internal static AuditProperty? GetPropertyEntity(this PropertyEntry property, Type type, WaybackDbContext context, bool ReadOnly = false) {
             var propertyName = property.Metadata.Name;
             var tableentity = type.GetTableEnitity(context);
             var result = context.AuditProperties.FirstOrDefault(s => s.Name == propertyName && s.ParentTable.ID == tableentity.ID);
@@ -65,9 +69,6 @@ namespace WaybackMachine {
         }
 
         public static void ConfigureWaybackModel(this IWaybackContext context, ModelBuilder modelBuilder) {
-            modelBuilder.Entity<AuditTransactionRecord>()
-                .HasMany(s => s.Changes)
-                .WithOne(s => s.ParentTransaction);
 
             var contextType = context.InternalDbContext.GetType().GetProperties();
             var types = context.InternalDbContext.GetType()
@@ -163,14 +164,15 @@ namespace WaybackMachine {
             return collection.AsQueryable().Where(predicate);
         }
 
-        internal static Type? GetTypeFromTableName(this DbContext dbcontext, string t) {
+        internal static Type? GetTypeFromTableName(this DbContext dbcontext, WaybackDbContext trackingcontext, string t) {
             Type? result = null;
+
 
             if (TableToTypeCache.TryGetValue(t, out result))
                 return result;
 
             result = dbcontext.Model.GetEntityTypes()
-                .FirstOrDefault(s => s.ClrType.GetTableEnitity((IWaybackContext)dbcontext).Name == t)?
+                .FirstOrDefault(s => s.ClrType.GetTableEnitity(trackingcontext).Name == t)?
                 .ClrType;
 
             TableToTypeCache.Add(t, result);
@@ -178,7 +180,9 @@ namespace WaybackMachine {
         }
 
         internal static dynamic FindSingleOrDefault(this DbContext dbcontext, string table, object Id) {
-            Type TableType = dbcontext.GetTypeFromTableName(table)
+            var trackingDatabase = new WaybackDbContext();
+            trackingDatabase.Database.EnsureCreated();
+            Type TableType = dbcontext.GetTypeFromTableName(trackingDatabase, table)
                ?? throw new Exception($"Failed to get type for table {table}");
 
             var setMethod = typeof(DbContext).GetMethod("Set", new Type[] { }).MakeGenericMethod(TableType);
@@ -200,7 +204,9 @@ namespace WaybackMachine {
         }
 
         internal static dynamic FindWhere(this DbContext dbcontext, string table, Expression expression) {
-            Type TableType = dbcontext.GetTypeFromTableName(table)
+            var trackingDatabase = new WaybackDbContext();
+            trackingDatabase.Database.EnsureCreated();
+            Type TableType = dbcontext.GetTypeFromTableName(trackingDatabase, table)
                ?? throw new Exception($"Failed to get type for table {table}");
 
             var setMethod = typeof(DbContext).GetMethod("Set", new Type[] { }).MakeGenericMethod(TableType);
@@ -213,7 +219,7 @@ namespace WaybackMachine {
 
             return IQF_WhereMethod.Invoke(null, new[] { dbSet, expression });
         }
-        
+
 
         internal static int GetPrimaryKeyValue(this object o) {
             var entity_id = (int)(o.GetType()
@@ -223,17 +229,20 @@ namespace WaybackMachine {
             return entity_id;
         }
 
-        internal static PropertyInfo GetPrimaryKeyField(this object o, Dictionary<Type, PropertyInfo>? cache = null) {
+
+
+        internal static PropertyInfo GetPrimaryKeyField(this object o, Dictionary<Type, PropertyInfo> cache = null) {
             PropertyInfo? entity_id_field = null;
-            if (cache != null) {
+            if (cache.TryGetValue(o.GetType(), out entity_id_field)) return entity_id_field;
+            lock (cache) {
                 if (cache.TryGetValue(o.GetType(), out entity_id_field)) return entity_id_field;
+                entity_id_field = o.GetType()
+                              .GetProperties()
+                              .First(s => s.GetCustomAttribute(typeof(System.ComponentModel.DataAnnotations.KeyAttribute)) != null);
+                if (cache != null)
+                    cache.Add(o.GetType(), entity_id_field);
+                return entity_id_field;
             }
-            entity_id_field = o.GetType()
-                          .GetProperties()
-                          .First(s => s.GetCustomAttribute(typeof(System.ComponentModel.DataAnnotations.KeyAttribute)) != null);
-            if (cache != null)
-                cache.Add(o.GetType(), entity_id_field);
-            return entity_id_field;
         }
 
         internal static PropertyInfo GetPrimaryKeyField(this Type o, Dictionary<Type, PropertyInfo>? cache = null) {
@@ -258,8 +267,9 @@ namespace WaybackMachine {
         }
 
         public static int SaveChangesWithTracking(this IWaybackContext context) {
-
-            var transaction = context.InternalDbContext.Database.BeginTransaction();
+            var trackingDatabase = new WaybackDbContext();
+            trackingDatabase.Database.EnsureCreated();
+            var totalChanges = 0;
             try {
                 var changes = context.InternalDbContext.ChangeTracker.Entries().ToList();
                 var explicitClassMode = (context.WaybackConfiguration.TrackingMode & WaybackConfig.TrackingModes.ExplicitClasses) != 0;
@@ -271,6 +281,7 @@ namespace WaybackMachine {
                     ChangeDate = DateTime.Now
                 };
 
+                Console.WriteLine($"Save operation, running {changes.Count(x => x.State != EntityState.Deleted && x.State != EntityState.Added)} changes...");
                 foreach (var entry in changes) {
                     var entryType = entry.Entity.GetType();
                     var isAuditable = entryType.GetCustomAttribute<Audit>() != null;
@@ -281,14 +292,14 @@ namespace WaybackMachine {
                     if (entry.State == EntityState.Deleted && isJunction) {
                         var fks = entry.Metadata.GetForeignKeys().ToList();
 
-                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(context);
-                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(context);
+                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(trackingDatabase);
+                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(trackingDatabase);
                         var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
                         var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
                             EntityID = entry.Entity.GetPrimaryKeyValue(),
-                            Table = entryType.BaseType.GetTableEnitity(context),
+                            Table = entryType.BaseType.GetTableEnitity(trackingDatabase),
                             J1 = index_a,
                             J2 = index_b,
                             J1Table = table_a,
@@ -316,7 +327,7 @@ namespace WaybackMachine {
 
                     var idProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
                     var idValue = idProperty.GetValue(entry.Entity);
-                    var tableEntity = entryType.GetTableEnitity(context)
+                    var tableEntity = entryType.GetTableEnitity(trackingDatabase)
                         ?? throw new Exception("Null returned for the table enitity");
 
                     foreach (var property in entry.Properties) {
@@ -339,7 +350,7 @@ namespace WaybackMachine {
                         }
 
                         var changeRecord = new AuditRecord() {
-                            Property = property.GetPropertyEntity(entryType, context),
+                            Property = property.GetPropertyEntity(entryType, trackingDatabase),
                             EntityID = (int)(idValue ?? -1),
                             Table = tableEntity,
                             OldValue = (converter != null ? OriginalValue_converted : OriginalValue)?.ToString(),
@@ -352,7 +363,7 @@ namespace WaybackMachine {
                     }
                 }
 
-                context.BaseSaveChanges();
+                totalChanges = context.BaseSaveChanges();
 
                 foreach (var entry in temporaryProperties) {
                     dynamic? CurrentValue = entry.Item1.CurrentValue;
@@ -361,6 +372,77 @@ namespace WaybackMachine {
                     entry.Item2.NewValue = CurrentValue?.ToString();
                 }
 
+
+                //Console.WriteLine($"Starting insertion job...");
+                //var sw = new Stopwatch();
+                //foreach (var entry in addedEntities) {
+                //    Type entryType = entry.Entity.GetType().GetBase()
+                //        ?? throw new Exception("Failed to get the damn type");
+
+                //    var primaryKeyProperty = entry.Entity.GetPrimaryKeyField(context.WaybackConfiguration.PropertyPrimaryFieldTrackingCache);
+                //    var id = (int)(primaryKeyProperty.GetValue(entry.Entity) ?? -1);
+
+                //    var IsJunction = entryType.GetCustomAttribute(typeof(JunctionTable), true) != null;
+                //    if (IsJunction) {
+                //        var fks = entry.Metadata.GetForeignKeys().ToList();
+                //        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(trackingDatabase);
+                //        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(trackingDatabase);
+                //        var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
+                //        var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
+
+                //        transactionRecord.Changes.Add(new AuditRecord() {
+                //            EntityID = id,
+                //            Table = entryType.GetTableEnitity(trackingDatabase),
+                //            J1 = index_a,
+                //            J2 = index_b,
+                //            J1Table = table_a,
+                //            J2Table = table_b,
+                //            ChangeType = AuditEntryType.CollectionAdd
+                //        });
+                //        continue;
+                //    }
+                //    transactionRecord.Changes.Add(new AuditRecord() {
+                //        EntityID = id,
+                //        Table = entryType.GetTableEnitity(trackingDatabase),
+                //        ChangeType = AuditEntryType.Created
+                //    });
+                //}
+
+                //sw.Stop();
+                //Console.WriteLine($"Finished insertion job in {sw.ElapsedMilliseconds}ms...");
+
+
+
+
+                trackingDatabase.AuditTransactions.Add(transactionRecord);
+                trackingDatabase.SaveChanges();
+
+                Console.WriteLine($"Starting insertion jobs...");
+                var sw = new Stopwatch();
+                sw.Start();
+                var addedJobTasks = addedEntities.Split(8)
+                    .Select(x => CreateAddEntitiesToContextJob(x.ToList(), transactionRecord.ID, context))
+                    .ToArray();
+
+                Task.WaitAll(addedJobTasks);
+                sw.Stop();
+                Console.WriteLine($"Finished insertion jobs in {sw.ElapsedMilliseconds}ms...");
+
+
+                return totalChanges;
+            } catch (Exception) {
+                throw;
+            }
+        }
+
+        public static Task CreateAddEntitiesToContextJob(List<EntityEntry> addedEntities, int transactionRecordId, IWaybackContext context) {
+            return Task.Run(() => {
+                var trackingDatabase = new WaybackDbContext();
+                var transactionRecord = trackingDatabase.AuditTransactions.Find(transactionRecordId);
+                var jobId = Guid.NewGuid();
+                Console.WriteLine($"{jobId} : Adding {addedEntities.Count} entities...");
+                var sw = new Stopwatch();
+                sw.Start();
                 foreach (var entry in addedEntities) {
                     Type entryType = entry.Entity.GetType().GetBase()
                         ?? throw new Exception("Failed to get the damn type");
@@ -371,14 +453,14 @@ namespace WaybackMachine {
                     var IsJunction = entryType.GetCustomAttribute(typeof(JunctionTable), true) != null;
                     if (IsJunction) {
                         var fks = entry.Metadata.GetForeignKeys().ToList();
-                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(context);
-                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(context);
+                        var table_a = fks[0].PrincipalEntityType.ClrType.GetTableEnitity(trackingDatabase);
+                        var table_b = fks[1].PrincipalEntityType.ClrType.GetTableEnitity(trackingDatabase);
                         var index_a = (int)(fks[0].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
                         var index_b = (int)(fks[1].Properties.First().FieldInfo?.GetValue(entry.Entity) ?? -1);
 
                         transactionRecord.Changes.Add(new AuditRecord() {
                             EntityID = id,
-                            Table = entryType.GetTableEnitity(context),
+                            Table = entryType.GetTableEnitity(trackingDatabase),
                             J1 = index_a,
                             J2 = index_b,
                             J1Table = table_a,
@@ -389,17 +471,22 @@ namespace WaybackMachine {
                     }
                     transactionRecord.Changes.Add(new AuditRecord() {
                         EntityID = id,
-                        Table = entryType.GetTableEnitity(context),
+                        Table = entryType.GetTableEnitity(trackingDatabase),
                         ChangeType = AuditEntryType.Created
                     });
                 }
-                context.AuditTransactions.Add(transactionRecord);
-                transaction.Commit();
-                return context.BaseSaveChanges();
-            } catch (Exception) {
-                transaction.Rollback();
-                throw;
-            }
+                trackingDatabase.SaveChanges();
+                sw.Stop();
+                Console.WriteLine($"{jobId} : Finished adding {addedEntities.Count} entities  in {sw.ElapsedMilliseconds}ms...");
+            });
+        }
+
+        public static IEnumerable<IEnumerable<T>> Split<T>(this IEnumerable<T> list, int parts) {
+            int i = 0;
+            var splits = from item in list
+                         group item by i++ % parts into part
+                         select part.AsEnumerable();
+            return splits;
         }
     }
 }

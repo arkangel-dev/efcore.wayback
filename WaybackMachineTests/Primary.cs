@@ -23,7 +23,11 @@ namespace WaybackMachineTests {
             yas = null;
             jim = null;
 
-
+            var wbcontext = new WaybackDbContext();
+            wbcontext.Database.EnsureCreated();
+            wbcontext.AuditEntries.ExecuteDelete();
+            wbcontext.AuditProperties.ExecuteDelete();
+            wbcontext.AuditTables.ExecuteDelete();
 
             context = new DatabaseContext();
             context.Database.EnsureCreated();
@@ -32,8 +36,6 @@ namespace WaybackMachineTests {
             context.Junction_Interests_Users.IgnoreQueryFilters().ExecuteDelete();
             context.Interests.ExecuteDelete();
             context.Users.ExecuteDelete();
-            context.AuditEntries.ExecuteDelete();
-            context.AuditTransactions.ExecuteDelete();
             context.Interests.ExecuteDelete();
             context.SaveChanges();
 
@@ -134,7 +136,7 @@ namespace WaybackMachineTests {
             write_sw.Restart();
             context.SaveChanges();
             write_sw.Stop();
-            Console.WriteLine($"Write Operation 2 Completed in {write_sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"Delete Operation 2 Completed in {write_sw.ElapsedMilliseconds}ms");
 
 
 

@@ -1,19 +1,5 @@
-﻿using Castle.Core.Internal;
-using Sample.DbEntities;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
+﻿using Microsoft.EntityFrameworkCore;
 using WaybackMachine;
-using WaybackMachine.Entities;
 
 namespace Sample {
     public class DatabaseContext : DbContext, IWaybackContext  {
@@ -29,14 +15,6 @@ namespace Sample {
                 .HasOne(s => s.Recipient)
                 .WithMany(s => s.Inbox)
                 .OnDelete(DeleteBehavior.Restrict);
-
-            modelBuilder.Entity<AuditRecord>()
-                .Property(s => s.ChangeType)
-                .HasConversion(
-                    x => (int)x,
-                    x => (AuditEntryType)x
-                )
-                .IsUnicode(false);
 
             modelBuilder.Entity<DbEntities.Interest>()
                 .HasMany(s => s.Users)
@@ -73,14 +51,8 @@ namespace Sample {
         public DbSet<DbEntities.Interest> Interests { get; set; }
         public DbSet<DbEntities.JUser_Interest> Junction_Interests_Users { get; set; }
         public DbContext InternalDbContext => this;
-        public DbSet<AuditRecord> AuditEntries { get; set; }
-        public DbSet<AuditTransactionRecord> AuditTransactions { get; set; }
-        public DbSet<AuditTable> AuditTables { get; set; }
-        public DbSet<AuditProperty> AuditProperties { get; set; }
 
 
         public WaybackConfig WaybackConfiguration { get; set; } = new WaybackConfig();
-        public List<AuditTable> _tempAuditTables { get; set; } = new List<AuditTable>();
-        public List<AuditProperty> _tempAuditProperties { get; set; } = new List<AuditProperty>();
     }
 }

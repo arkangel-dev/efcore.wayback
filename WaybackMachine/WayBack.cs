@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.VisualBasic;
 using System.Collections;
@@ -19,12 +20,15 @@ namespace WaybackMachine {
     public class WayBack {
 
         internal IWaybackContext _dbcontext;
+        internal WaybackDbContext _trackingDbContext;
         internal ProxyGenerator _generator;
         internal DateTime _revertPoint;
         private WayBack(IWaybackContext dbcontext, DateTime revertPoint) {
             _dbcontext = dbcontext;
             _revertPoint = revertPoint;
             _generator = new ProxyGenerator();
+            _trackingDbContext = new WaybackDbContext();
+            _trackingDbContext.Database.EnsureCreated();
         }
 
         public static WayBack CreateWayBack(IWaybackContext dbcontext, DateTime revertPoint) {
@@ -111,7 +115,7 @@ namespace WaybackMachine {
             if (_entityCacheProxies.TryGetValue(_returnVal, out cacheCheck))
                 return cacheCheck;
 
-            var _type = _dbcontext.InternalDbContext.GetTypeFromTableName(tablename);
+            var _type = _trackingDbContext.GetTypeFromTableName(_trackingDbContext, tablename);
             _returnVal = GenerateEntity(_returnVal, _type);
             return _returnVal;
         }
@@ -168,7 +172,7 @@ namespace WaybackMachine {
             var tableName = targetBaseType.GetBase().Name; //_dbcontext.InternalDbContext.GetTableNameFromType(targetBaseType);
 
             // Get the change history for the entity
-            var auditLogs = _dbcontext.AuditEntries
+            var auditLogs = _trackingDbContext.AuditEntries
                 .Where(s =>
                     s.EntityID == entityID &&
                     s.Table.Name == tableName &&
@@ -217,6 +221,8 @@ namespace WaybackMachine {
         private Dictionary<string, object?> ReadResultCacheDictionary
             = new Dictionary<string, object?>();
 
+        private PropertyInfo? PrimaryKeyProperty = null;
+
         /// <summary>
         /// Constructor of the wayback interceptor
         /// </summary>
@@ -234,6 +240,8 @@ namespace WaybackMachine {
                 throw new Exception("Invalid Target Passed");
         }
 
+       
+
         public void Intercept(IInvocation invocation) {
             if (invocation.Method.IsVirtual && invocation.Method.Name.StartsWith("get_") && invocation.Method.IsSpecialName) {
 
@@ -246,22 +254,23 @@ namespace WaybackMachine {
 
                 // Save the return type and the entity ID
 
-                var propertyName = String.Join(String.Empty, invocation.Method.Name.Skip(4));
-                var returnType = invocation.Method.ReturnParameter.ParameterType;
-                var entity_id = (int)(_target.GetType()
-                          .GetProperties()
-                          .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)))
-                          .GetValue(_target) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
+                var propertyName = invocation.Method.Name.Substring(4, invocation.Method.Name.Length - 4); //String.Join(String.Empty, invocation.Method.Name.Skip(4));
+                var returnType = invocation.Method.ReturnParameter.ParameterType;
+                if (PrimaryKeyProperty == null)
+                        PrimaryKeyProperty = _target.GetType()
+                                     .GetProperties()
+                                     .First(s => s.GetCustomAttributes(false).Any(s => s.GetType() == typeof(System.ComponentModel.DataAnnotations.KeyAttribute)));
+             
+
+                var entity_id = (int)(PrimaryKeyProperty
+                          .GetValue(_target) ?? throw new Exception("Failed to get the KeyAttribute of the entity"));
 
                 var entityType = _target.GetType().BaseType
                     ?? throw new Exception($"Cannot get the base type for `{_target.GetType().FullName}`");
 
                 var efCoreEntityType = _wayback._dbcontext.InternalDbContext.Model.FindEntityType(entityType)
                     ?? throw new Exception($"Cannot get entity type of `{entityType.FullName}`");
-
-
-
 
                 IProperty targetForeignKey = null;
                 var IsJunction = false;
@@ -291,7 +300,7 @@ namespace WaybackMachine {
 
                     var invocation_result = invocation.Method.Invoke(_target, invocation.Arguments);
 
-                    var latestUpdate = _wayback._dbcontext.AuditEntries
+                    var latestUpdate = _wayback._trackingDbContext.AuditEntries
                         .Where(s =>
                             s.Property.Name == targetForeignKey.Name &&
                             s.Table.Name == sourceTableName &&
@@ -360,7 +369,7 @@ namespace WaybackMachine {
                                 // Loop over the invocation results
                                 // and create proxies and add them to the list
 
-                                var targetAuditEntries = _wayback._dbcontext.AuditEntries.Where(s =>
+                                var targetAuditEntries = _wayback._trackingDbContext.AuditEntries.Where(s =>
                                    s.Table.Name == targetTableName &&
                                    s.Property.Name == targetForeignKey.Name &&
                                    s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&
@@ -372,7 +381,7 @@ namespace WaybackMachine {
 
 
 
-                                var createdEntities = _wayback._dbcontext.AuditEntries.Where(s =>
+                                var createdEntities = _wayback._trackingDbContext.AuditEntries.Where(s =>
                                     s.Table.Name == targetTableName &&
                                     s.ChangeType == AuditEntryType.Created &&
                                     s.ParentTransaction.ChangeDate > _wayback._revertPoint
@@ -461,10 +470,10 @@ namespace WaybackMachine {
                         } else {
 
                             var junctionTable = targetForeignKey.DeclaringEntityType.ClrType.Name;
-                            var srcTable = entityType.GetTableEnitity(_wayback._dbcontext);
-                            var destTable = genericType.GetTableEnitity(_wayback._dbcontext);
+                            var srcTable = entityType.GetTableEnitity(_wayback._trackingDbContext);
+                            var destTable = genericType.GetTableEnitity(_wayback._trackingDbContext);
 
-                            var targetAuditEntries = _wayback._dbcontext.AuditEntries
+                            var targetAuditEntries = _wayback._trackingDbContext.AuditEntries
                                 .Where(s =>
                                     s.Table.Name == junctionTable &&
                                     s.ParentTransaction.ChangeDate >= _wayback._revertPoint &&

@@ -27,8 +27,6 @@ namespace WaybackMachineTests {
             context.Junction_Interests_Users.Where(x => true).ExecuteDelete();
             context.Messages.IgnoreQueryFilters().ExecuteDelete();
             context.Users.Where(x => true).ExecuteDelete();
-            context.AuditEntries.Where(x => true).ExecuteDelete();
-            context.AuditTransactions.Where(x => true).ExecuteDelete();
             context.Interests.Where(x => true).ExecuteDelete();
             context.SaveChanges();
 
