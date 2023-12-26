@@ -1,8 +1,7 @@
 [![test](https://img.shields.io/badge/Download_on_Nuget-blue)](https://www.nuget.org/packages/WaybackMachine/) ![Static Badge](https://img.shields.io/badge/Version-1.5.2-green)
 
 # Wayback for Entity Framework Core 
-
-A small library that implements a way to revert an `EFCore` object to a previous state. The entities returned by the `WayBack` class are `Castle.Core.Proxies` proxies. That allows lazy loading just like `EFCore`, however the lazy loaded entities are also reverted back in time to the same point as the parent entity.
+This is a small library that implements a way to revert an `EFCore` object to a previous state. The entities returned by the `WayBack` class are `Castle.Core.Proxies` proxies. That allows lazy loading just like `EFCore`, however the lazy loaded entities are also reverted back in time to the same point as the parent entity. The tracking data is offloaded to another database to improve efficiency
 
 ## Installation
 
@@ -38,39 +37,62 @@ Console.WriteLine($"Old Name : {oldsam.Name}");
 
 
 
-## Setup
+## Getting Started
 
-1. The database context will have to implement the `IWaybackContext` interface
+1. The database context will have to implement the `IWaybackContext` interface. This allows Wayback to assimilate an instance of that context and 
 
 ```csharp
 public class DatabaseContext : DbContext, IWaybackContext  
 ```
 
-2. The interface will require you to implement three fields. Implement them like so
-
-```c#
-public DbContext InternalDbContext => this;
-public DbSet<AuditRecord> AuditEntries { get; set; }
-public DbSet<AuditTransactionRecord> AuditTransactions { get; set; }
-```
-
-3. It will also implement the `BaseSaveChanges` method. Implement that method like so
+2. It will also implement the `BaseSaveChanges` method. This method is the method that Wayback uses as a the base method to save changes. Ideally this method should call the native `SaveChanges()` method in the Entity Framework context.
 
 ```C#
-public int BaseSaveChanges() => base.SaveChanges();		
+public int BaseSaveChanges() => base.SaveChanges();
 ```
 
-3. In the `OnModelCreating` method, call the extension method `WaybackMachine.WaybackDbContextExtensions.ConfigureWaybackModel`
-
-```c#
-this.ConfigureWaybackModel(modelBuilder);
-```
-
-4. Override the `SaveChanges` method of the database context to call the extension method `WaybackMachine.WaybackDbContextExtension.SaveChangesWithTracking` like so. This step is optional
+3. Override the `SaveChanges` method of the database context to call the extension method `WaybackMachine.WaybackDbContextExtension.SaveChangesWithTracking()` like so. If you don't want the tracking to be enabled by default, you can skip this step
 
 ```C#
 public override int SaveChanges() => this.SaveChangesWithTracking();
 ```
+
+4. You finally need to define the database connection string for the auditing database in `appsettings.json`. The connection string name should be `WaybackTracking`. Note that version updates may include migrations to the database and they will not be automatically applied unless the backup path for the Wayback database is defined in `appsettings.json` at `Wayback:Migration:BackupPath`
+
+```json
+{
+	"ConnectionStrings": {
+		"WaybackTracking": "Connection string to the wayback database"
+	},
+    "Wayback": {
+        "Migration": {
+            "BackupPath": "/path/to/backup"
+        }
+    }
+}
+```
+
+5. To implement soft deletion, you need to implement the interface `IWaybackSoftDelete` on the entities you wish to soft delete. This interface will implement a `datetime?` property that allows Wayback to determine when the entity was deleted. Of course it is important to note that soft deleting entities will not 
+
+```c#
+[SoftDelete]
+public class Message : IWaybackSoftDeletable {
+    public Message() {
+        Guid = Guid.NewGuid();
+    }
+    [Key]
+    public int ID { get; set; }
+    public string Contents { get; set; }
+    public virtual User? Sender { get; set; }
+    public virtual User? Recipient { get; set; }
+
+    [NotMapped]
+    public Guid Guid { get; set; }
+    public DateTime? DeleteDate { get; set; }
+}
+```
+
+
 
 # :exclamation: Limitations
 
@@ -90,7 +112,7 @@ public override int SaveChanges() => this.SaveChangesWithTracking();
 
 `Audit` : This indicates to Wayback that an entity should be audited and tracked
 
-`SoftDelete` : This indicates that entities have to be soft deleted instead of hard deletes. If this attribute is added to an entity, then it implemented a `bool IsDeleted` parameter. If this attribute is implemented, the `OnModelCreating` method will also implement a Query filter on it. Entities with this attribute also have to implement the `IWaybackSoftDeletable` interface
+`SoftDelete` : This indicates that entities have to be soft deleted instead of hard deleted. If this attribute is added to an entity, then it implemented a `bool IsDeleted` parameter. If this attribute is implemented, the `OnModelCreating` method will also implement a Query filter on it. Entities with this attribute also have to implement the `IWaybackSoftDeletable` interface
 
 
 
