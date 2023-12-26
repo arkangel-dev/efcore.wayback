@@ -23,12 +23,13 @@ namespace WaybackMachineTests {
 
             context = new DatabaseContext();
             context.Database.EnsureCreated();
-            context.Messages.ExecuteDelete();
-            context.Junction_Interests_Users.ExecuteDelete();
-            context.Users.ExecuteDelete();
-            context.AuditEntries.ExecuteDelete();
-            context.AuditTransactions.ExecuteDelete();
-            context.Interests.ExecuteDelete();
+
+            context.Junction_Interests_Users.Where(x => true).ExecuteDelete();
+            context.Messages.IgnoreQueryFilters().ExecuteDelete();
+            context.Users.Where(x => true).ExecuteDelete();
+            context.AuditEntries.Where(x => true).ExecuteDelete();
+            context.AuditTransactions.Where(x => true).ExecuteDelete();
+            context.Interests.Where(x => true).ExecuteDelete();
             context.SaveChanges();
 
             // Create the users

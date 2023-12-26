@@ -3,6 +3,7 @@ using Sample.DbEntities;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using WaybackMachine;
+using System.Data;
 
 namespace WaybackMachineTests {
     [TestClass]
@@ -378,10 +379,31 @@ namespace WaybackMachineTests {
             Assert.AreEqual(0, sam.Sent.Count());
             Assert.AreEqual(0, context.Messages.Count());
             Assert.AreEqual(1, context.Messages.IgnoreQueryFilters().Count());
-
-
         }
 
+        [TestMethod("Single Transaction Insertions")]
+        public void SingleCallInsertions() {
+            var dave = new User("Dave");
+
+            dave.Sent.Add(new Message() {
+                Contents = "Hello Sam",
+                Recipient = sam
+            });
+            dave.Inbox.Add(new Message() {
+                Contents = "Hi Dave",
+                Sender = sam
+            });
+            dave.Sent.Add(new Message() {
+                Contents = "How are you?",
+                Recipient = sam
+            });
+            dave.Inbox.Add(new Message() {
+                Contents = "I am good",
+                Sender = sam
+            });
+            context.Users.Add(dave);
+            context.SaveChanges();
+        }
 
         [TestMethod("Soft Delete Reversal")]
         public void SoftDeleteReversal() {
