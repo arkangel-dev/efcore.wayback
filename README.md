@@ -6,7 +6,7 @@ This is a small library that implements a way to revert an `EFCore` object to a 
 ## Installation
 
 ```
-PM> NuGet\Install-Package WaybackMachine -Version 1.5.2
+PM> NuGet\Install-Package WaybackMachine -Version 1.8.0
 ```
 
 ## Usage
@@ -57,6 +57,7 @@ public int BaseSaveChanges() => base.SaveChanges();
 public override int SaveChanges() => this.SaveChangesWithTracking();
 ```
 
+
 4. You finally need to define the database connection string for the auditing database in `appsettings.json`. The connection string name should be `WaybackTracking`. Note that version updates may include migrations to the database and they will not be automatically applied unless the backup path for the Wayback database is defined in `appsettings.json` at `Wayback:Migration:BackupPath`
 
 ```json
@@ -91,7 +92,13 @@ public class Message : IWaybackSoftDeletable {
     public DateTime? DeleteDate { get; set; }
 }
 ```
+4. Call `IWaybackContext.ConfigureWaybackModel(ModelBuilder mb)` in the `OnModelCreating(ModelBuilder mb)` method in your database context. This is done so that Wayback can add a query filter to exclude soft deleted results from queries by default. You can skip this step if you want to handle query filtering on your own
 
+```c#
+protected override void OnModelCreating(ModelBuilder modelBuilder) {
+    this.ConfigureWaybackModel(modelBuilder);
+}
+```
 
 
 # :exclamation: Limitations
