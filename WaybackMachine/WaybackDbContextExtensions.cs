@@ -278,7 +278,7 @@ namespace WaybackMachine {
                 var temporaryProperties = new List<Tuple<PropertyEntry, AuditRecord>>();
                 var transactionRecord = new AuditTransactionRecord() {
                     TransactionID = Guid.NewGuid(),
-                    ChangeDate = DateTime.Now
+                    ChangeDate = DateTime.UtcNow
                 };
 
                 Console.WriteLine($"Save operation, running {changes.Count(x => x.State != EntityState.Deleted && x.State != EntityState.Added)} changes...");
@@ -311,7 +311,7 @@ namespace WaybackMachine {
                         var deleteProperty = entryType.GetBase().GetProperty("DeleteDate")
                             ?? throw new Exception($"The DeleteDate Property is not defined but the SoftDeleted attribute is defined for type {entryType.GetBase().FullName}");
 
-                        deleteProperty.SetValue(entry.Entity, DateTime.Now);
+                        deleteProperty.SetValue(entry.Entity, DateTime.UtcNow);
                         entry.State = EntityState.Unchanged;
                         continue;
                     }

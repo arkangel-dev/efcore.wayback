@@ -1,4 +1,4 @@
-[![test](https://img.shields.io/badge/Download_on_Nuget-blue)](https://www.nuget.org/packages/WaybackMachine/) ![Static Badge](https://img.shields.io/badge/Version-1.5.2-green)
+[![test](https://img.shields.io/badge/Download_on_Nuget-blue)](https://www.nuget.org/packages/WaybackMachine/) ![Static Badge](https://img.shields.io/badge/Version-1.8-green)
 
 # Wayback for Entity Framework Core 
 This is a small library that implements a way to revert an `EFCore` object to a previous state. The entities returned by the `WayBack` class are `Castle.Core.Proxies` proxies. That allows lazy loading just like `EFCore`, however the lazy loaded entities are also reverted back in time to the same point as the parent entity. The tracking data is offloaded to another database to improve efficiency
@@ -6,7 +6,7 @@ This is a small library that implements a way to revert an `EFCore` object to a 
 ## Installation
 
 ```
-PM> NuGet\Install-Package WaybackMachine -Version 1.8.0
+PM> NuGet\Install-Package WaybackMachine -Version 1.8
 ```
 
 ## Usage
@@ -22,7 +22,7 @@ context.SaveChanges();
 
 // Save the revert time point and
 // then make some modifications and save
-var revertPoint = DateTime.Now;
+var revertPoint = DateTime.UtcNow;
 sam.Name = "Sam";
 context.SaveChanges();
 
