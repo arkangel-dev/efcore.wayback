@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -281,7 +282,9 @@ namespace WaybackMachine {
                     ChangeDate = DateTime.UtcNow
                 };
 
-                Console.WriteLine($"Save operation, running {changes.Count(x => x.State != EntityState.Deleted && x.State != EntityState.Added)} changes...");
+                if (changes.Count(x => x.State == EntityState.Modified) > 0) {
+                    Console.WriteLine($"Save operation, running {changes.Count(x => x.State == EntityState.Modified)} changes...");
+                }
                 foreach (var entry in changes) {
                     var entryType = entry.Entity.GetType();
                     var isAuditable = entryType.GetCustomAttribute<Audit>() != null;
@@ -413,21 +416,23 @@ namespace WaybackMachine {
 
 
 
+                if (transactionRecord.Changes.Count != 0) {
+                    trackingDatabase.AuditTransactions.Add(transactionRecord);
+                    trackingDatabase.SaveChanges();
+                }
 
-                trackingDatabase.AuditTransactions.Add(transactionRecord);
-                trackingDatabase.SaveChanges();
+                if (addedEntities.Count != 0) {
+                    Console.WriteLine($"Starting insertion jobs...");
+                    var sw = new Stopwatch();
+                    sw.Start();
+                    var addedJobTasks = addedEntities.Split(8)
+                        .Select(x => CreateAddEntitiesToContextJob(x.ToList(), transactionRecord.ID, context))
+                        .ToArray();
 
-                Console.WriteLine($"Starting insertion jobs...");
-                var sw = new Stopwatch();
-                sw.Start();
-                var addedJobTasks = addedEntities.Split(8)
-                    .Select(x => CreateAddEntitiesToContextJob(x.ToList(), transactionRecord.ID, context))
-                    .ToArray();
-
-                Task.WaitAll(addedJobTasks);
-                sw.Stop();
-                Console.WriteLine($"Finished insertion jobs in {sw.ElapsedMilliseconds}ms...");
-
+                    Task.WaitAll(addedJobTasks);
+                    sw.Stop();
+                    Console.WriteLine($"Finished insertion jobs in {sw.ElapsedMilliseconds}ms...");
+                }
 
                 return totalChanges;
             } catch (Exception) {
