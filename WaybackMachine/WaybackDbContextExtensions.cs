@@ -416,12 +416,12 @@ namespace WaybackMachine {
 
 
 
-                if (transactionRecord.Changes.Count != 0) {
+                if (transactionRecord.Changes.Count > 0 || addedEntities.Count > 0) {
                     trackingDatabase.AuditTransactions.Add(transactionRecord);
                     trackingDatabase.SaveChanges();
                 }
 
-                if (addedEntities.Count != 0) {
+                if (addedEntities.Count > 0) {
                     Console.WriteLine($"Starting insertion jobs...");
                     var sw = new Stopwatch();
                     sw.Start();

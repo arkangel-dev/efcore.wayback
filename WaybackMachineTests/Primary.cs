@@ -57,7 +57,7 @@ namespace WaybackMachineTests {
             context.SaveChangesWithTracking();
 
 
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "John");
 
             Assert.AreEqual("Sammy", oldsam.Name);
@@ -69,7 +69,7 @@ namespace WaybackMachineTests {
             context.SaveChanges();
 
 
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.BestFriend == null);
 
             Assert.IsNull(oldsam.BestFriend);
@@ -86,7 +86,7 @@ namespace WaybackMachineTests {
             }
             context.SaveChanges();
 
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             Assert.AreEqual(0, oldsam.Sent.Count());
         }
@@ -100,7 +100,7 @@ namespace WaybackMachineTests {
             });
             context.SaveChanges();
 
-            var snapshottime = DateTime.Now;
+            var snapshottime = DateTime.UtcNow;
 
             for (int i = 0; i < 100; i++) {
                 sam.Sent.Add(new Message() {
@@ -131,7 +131,7 @@ namespace WaybackMachineTests {
 
             Console.WriteLine($"Write Operation 1 Completed in {write_sw.ElapsedMilliseconds}ms");
 
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
             sam.Sent.Clear();
             write_sw.Restart();
             context.SaveChanges();
@@ -171,7 +171,7 @@ namespace WaybackMachineTests {
 
             Console.WriteLine($"Write Operation 1 Completed in {write_sw.ElapsedMilliseconds}ms");
 
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
 
             sam.Sent.Clear();
             context.SaveChanges();
@@ -193,7 +193,7 @@ namespace WaybackMachineTests {
 
         [TestMethod("Many to Many (New Entries)")]
         public void ManyToManyReversal_NewEntries() {
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
 
             var softwareInterest = new Interest() {
                 InterestName = "Software Engineering"
@@ -223,7 +223,7 @@ namespace WaybackMachineTests {
         [TestMethod("Many to Many (Existing)")]
         public void ManyToManyReversal_ExistingEntries() {
             ManyToManyReversal_NewEntries();
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
 
             sam.Interests.Remove(sam.Interests.First());
             context.SaveChanges();
@@ -241,7 +241,7 @@ namespace WaybackMachineTests {
         public void ManyToManyReversal_ExtendExisting() {
             ManyToManyReversal_NewEntries();
 
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
 
             var sports_interest = new Interest() { InterestName = "Sports" };
             context.Interests.Add(sports_interest);
@@ -261,7 +261,7 @@ namespace WaybackMachineTests {
         [TestMethod("Many to Many (Dual Jump Back)")]
         public void ManyToManyReversal_ExtendExistingJumpBack() {
 
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
             ManyToManyReversal_NewEntries();
 
 
@@ -296,7 +296,7 @@ namespace WaybackMachineTests {
             yas.Name = "Yasmin";
             context.SaveChanges();
 
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
 
             sam.BestFriend = null;
             yas.BestFriend = null;
@@ -336,7 +336,7 @@ namespace WaybackMachineTests {
             yas.Name = "Yasmin";
             context.SaveChanges();
 
-            var PreReversalTime = DateTime.Now;
+            var PreReversalTime = DateTime.UtcNow;
 
             sam.BestFriend = null;
             yas.BestFriend = null;
@@ -416,7 +416,7 @@ namespace WaybackMachineTests {
             sam.Sent.Add(message);
             context.SaveChanges();
 
-            var revertPoint = DateTime.Now;
+            var revertPoint = DateTime.UtcNow;
 
             context.Messages.Remove(message);
             context.SaveChanges();

@@ -44,7 +44,7 @@ namespace WaybackMachineTests {
         public void TestReadSpeedNull() {
             sam.BestFriend = null;
             context.SaveChanges();
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
 
             var sw = new Stopwatch();
@@ -60,7 +60,7 @@ namespace WaybackMachineTests {
         public void TestReadSpeed() {
             sam.BestFriend = yas;
             context.SaveChanges();
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             var sw = new Stopwatch();
             sw.Start();
@@ -74,7 +74,7 @@ namespace WaybackMachineTests {
 
         [TestMethod("Many To Many Col Property : Null : 10000 cycles")]
         public void ManyToManyReadSpeedNull() {
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             var sw = new Stopwatch();
             sw.Start();
@@ -100,7 +100,7 @@ namespace WaybackMachineTests {
             sam.Interests.AddRange(interests);
             context.SaveChanges();
 
-            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.Now.AddMinutes(-5));
+            var wayback = WayBack.CreateWayBack(new DatabaseContext(), DateTime.UtcNow.AddMinutes(-5));
             var oldsam = wayback.DbSetFirst<User>(x => x.Name == "Sammy");
             var sw = new Stopwatch();
             sw.Start();
